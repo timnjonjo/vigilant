@@ -128,10 +128,16 @@ public class DevDataSeeder implements CommandLineRunner {
         seedSharedDeviceCluster(now, activeId);
         seedCycle(now, activeId);
         seedMultiEdgeOverlap(now, activeId);
+        seedViralBusinessContrast(now, activeId);
+        seedHouseholdContrast(now, activeId);
+        seedFriendsCycleContrast(now, activeId);
+        seedChurnContrast(now, activeId);
+        seedCorporateVpnContrast(now, activeId);
+        seedCrossCampaignOverlap(now, activeId, endedId);
         seedResolvedFalsePositive(now, endedId);
         seedResolvedConfirmedFraud(now, endedId);
 
-        log.info("[dev-seed] done — 2 campaigns (1 active, 1 ended), 7 cases (5 open, 2 resolved) with subgraphs.");
+        log.info("[dev-seed] done — 2 campaigns, 7 cases, plus fraud-rule validation contrast subgraphs.");
     }
 
     // ---- Scenario 1: organic contrast (clean graph, held only for mild velocity) ----
@@ -203,6 +209,64 @@ public class DevDataSeeder implements CommandLineRunner {
         openCase(campaign, code, "ov-r1", Decision.REJECT, 0.93,
                 List.of(ReasonCode.VELOCITY_BURST, ReasonCode.DEVICE_COLLISION,
                         ReasonCode.IP_SUBNET_COLLISION, ReasonCode.DATACENTER_OR_VPN_IP), at);
+    }
+
+    // ---- Validation contrasts: realistic lookalikes used by the repeatable rule audit ----
+
+    /** Popular local business: same fan-out shape as a bot burst, but diverse identities. */
+    private void seedViralBusinessContrast(Instant now, CampaignId campaign) {
+        Instant at = now.minus(Duration.ofHours(2));
+        String code = "LOOB-VIRAL-BIZ";
+        referrer(code, "viral-kibanda", "dev-viral-owner", "41.70.1.1", IpType.RESIDENTIAL, at);
+        for (int i = 1; i <= 10; i++) {
+            redeem(campaign, code, "viral-customer-" + i, "dev-viral-" + i,
+                    "41." + (100 + i) + ".1.5", IpType.RESIDENTIAL, at.plusSeconds(i * 90L));
+        }
+    }
+
+    /** Two siblings sharing both one phone and one home-fibre router. */
+    private void seedHouseholdContrast(Instant now, CampaignId campaign) {
+        Instant at = now.minus(Duration.ofHours(3));
+        String code = "LOOB-HOUSEHOLD";
+        referrer(code, "household-ref", "dev-household-ref", "105.30.1.1", IpType.RESIDENTIAL, at);
+        redeem(campaign, code, "household-a", "family-shared-phone", "105.30.20.2", IpType.RESIDENTIAL, at.plusSeconds(60));
+        redeem(campaign, code, "household-b", "family-shared-phone", "105.30.20.3", IpType.RESIDENTIAL, at.plusSeconds(120));
+    }
+
+    /** A single two-friend cycle, the ambiguity contrast for the three-node ring. */
+    private void seedFriendsCycleContrast(Instant now, CampaignId campaign) {
+        Instant at = now.minus(Duration.ofHours(5));
+        referrer("LOOB-FRIEND-A", "friend-a", "dev-friend-a", "196.10.1.1", IpType.RESIDENTIAL, at);
+        referrer("LOOB-FRIEND-B", "friend-b", "dev-friend-b", "196.10.2.1", IpType.RESIDENTIAL, at);
+        redeem(campaign, "LOOB-FRIEND-A", "friend-b", "dev-friend-b", "196.10.2.1", IpType.RESIDENTIAL, at.plusSeconds(60));
+        redeem(campaign, "LOOB-FRIEND-B", "friend-a", "dev-friend-a", "196.10.1.1", IpType.RESIDENTIAL, at.plusSeconds(120));
+    }
+
+    /** Converted then churned: the graph has conversion but no post-conversion activity model. */
+    private void seedChurnContrast(Instant now, CampaignId campaign) {
+        Instant at = now.minus(Duration.ofDays(12));
+        String code = "LOOB-CHURNED";
+        referrer(code, "churn-ref", "dev-churn-ref", "154.80.1.1", IpType.RESIDENTIAL, at);
+        redeem(campaign, code, "churned-user", "dev-churned", "154.80.2.1", IpType.RESIDENTIAL, at.plusSeconds(60));
+        convert(campaign, code, "churned-user", at.plusSeconds(3600));
+    }
+
+    /** Legitimate employee on a corporate VPN, indistinguishable from a cloud proxy. */
+    private void seedCorporateVpnContrast(Instant now, CampaignId campaign) {
+        Instant at = now.minus(Duration.ofHours(6));
+        String code = "LOOB-CORP-VPN";
+        referrer(code, "employee-ref", "dev-employee-ref", "197.220.1.1", IpType.RESIDENTIAL, at);
+        redeem(campaign, code, "employee-vpn", "dev-employee", "3.8.1.10", IpType.DATACENTER, at.plusSeconds(60));
+    }
+
+    /** Same identity farmed in both campaigns; shared edges must cross campaign scope. */
+    private void seedCrossCampaignOverlap(Instant now, CampaignId active, CampaignId ended) {
+        Instant endedAt = now.minus(Duration.ofDays(12));
+        Instant activeAt = now.minus(Duration.ofHours(7));
+        referrer("LOOB-CROSS-B", "cross-ref", "dev-cross-ref", "41.200.1.1", IpType.RESIDENTIAL, endedAt);
+        redeem(ended, "LOOB-CROSS-B", "cross-b", "cross-shared-device", "41.200.20.3", IpType.RESIDENTIAL, endedAt.plusSeconds(60));
+        referrer("LOOB-CROSS-A", "cross-ref", "dev-cross-ref", "41.200.1.1", IpType.RESIDENTIAL, activeAt);
+        redeem(active, "LOOB-CROSS-A", "cross-a", "cross-shared-device", "41.200.20.2", IpType.RESIDENTIAL, activeAt.plusSeconds(60));
     }
 
     // ---- Scenario 6: already-resolved, ruled a false positive (drives FP-rate) ----

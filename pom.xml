@@ -234,6 +234,14 @@
                     <!-- Docker Engine 29 requires API >= 1.44, but Testcontainers'
                          docker-java client negotiates 1.32 by default. Pin it. -->
                     <argLine>-Dapi.version=1.44</argLine>
+                    <!-- Fraud/campaign validation lives on the real backing stores;
+                         keep the existing *IT convention in the normal regression run. -->
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*TestCase.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
                 </configuration>
             </plugin>
             <plugin>

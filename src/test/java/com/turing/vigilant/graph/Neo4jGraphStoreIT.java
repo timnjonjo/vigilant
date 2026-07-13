@@ -5,6 +5,10 @@ import com.turing.vigilant.graph.GraphCommands.RedemptionRecord;
 import com.turing.vigilant.graph.GraphCommands.ReferrerRegistration;
 import com.turing.vigilant.shared.CampaignId;
 import com.turing.vigilant.shared.IpType;
+import com.turing.vigilant.scoring.RuleBasedScorer;
+import com.turing.vigilant.scoring.ScoringRequest;
+import com.turing.vigilant.scoring.ScoringWeights;
+import com.turing.vigilant.shared.ReasonCode;
 import com.turing.vigilant.shared.ReferralCode;
 import com.turing.vigilant.shared.TenantId;
 import org.junit.jupiter.api.AfterAll;
@@ -122,9 +126,36 @@ class Neo4jGraphStoreIT {
         store.recordRedemption(new RedemptionRecord(loob, campA, code, "B", "db", "10.0.0.3", t0.plusSeconds(60)));
         store.recordRedemption(new RedemptionRecord(loob, campA, ReferralCode.of("LOOB-R2"), "C", "dc", "10.0.2.2", t0.plusSeconds(60)));
 
-        FanoutBaseline baseline = store.fanoutBaseline(loob, campA);
+        FanoutBaseline baseline = store.fanoutBaseline(
+                loob, campA, t0.minusSeconds(1), t0.plusSeconds(3600));
 
         // {R1:2, R2:1} -> mean 1.5, variance (4+1)/2 - 1.5^2 = 0.25, stddev 0.5.
+        assertThat(baseline.sampleSize()).isEqualTo(2);
+        assertThat(baseline.mean()).isEqualTo(1.5);
+        assertThat(baseline.standardDeviation()).isEqualTo(0.5);
+    }
+
+    @Test
+    void fanoutBaselineUsesTheSameRollingWindowAsVelocityScoring() {
+        ReferralCode oldCode = ReferralCode.of("LOOB-OLD");
+        ReferralCode recentR1 = ReferralCode.of("LOOB-RECENT-1");
+        ReferralCode recentR2 = ReferralCode.of("LOOB-RECENT-2");
+        store.registerReferrer(new ReferrerRegistration(
+                loob, "old-ref", "d-old", "10.9.0.1", oldCode, t0.minusSeconds(172800)));
+        for (int i = 0; i < 10; i++) {
+            store.recordRedemption(new RedemptionRecord(
+                    loob, campA, oldCode, "old-" + i, "do-" + i,
+                    "10.9." + (10 + i) + ".2", t0.minusSeconds(172800 - i)));
+        }
+        store.registerReferrer(new ReferrerRegistration(loob, "recent-1", "d-r1", "10.10.0.1", recentR1, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, "recent-2", "d-r2", "10.11.0.1", recentR2, t0));
+        store.recordRedemption(new RedemptionRecord(loob, campA, recentR1, "new-a", "dna", "10.12.0.1", t0));
+        store.recordRedemption(new RedemptionRecord(loob, campA, recentR1, "new-b", "dnb", "10.13.0.1", t0));
+        store.recordRedemption(new RedemptionRecord(loob, campA, recentR2, "new-c", "dnc", "10.14.0.1", t0));
+
+        FanoutBaseline baseline = store.fanoutBaseline(
+                loob, campA, t0.minusSeconds(3600), t0.plusSeconds(3600));
+
         assertThat(baseline.sampleSize()).isEqualTo(2);
         assertThat(baseline.mean()).isEqualTo(1.5);
         assertThat(baseline.standardDeviation()).isEqualTo(0.5);
@@ -148,25 +179,67 @@ class Neo4jGraphStoreIT {
                 .containsExactlyInAnyOrder("A", "B");           // not A, B, C
         assertThat(b.fanoutOfReferrer()).extracting(ReferralEdge::refereeUserId)
                 .containsExactly("C");
-        assertThat(store.fanoutBaseline(loob, campA).mean()).isEqualTo(2.0); // R:2 in camp-A
-        assertThat(store.fanoutBaseline(loob, campB).mean()).isEqualTo(1.0); // R:1 in camp-B
+        assertThat(store.fanoutBaseline(loob, campA, t0, t0.plusSeconds(3600)).mean())
+                .isEqualTo(2.0); // R:2 in camp-A
+        assertThat(store.fanoutBaseline(loob, campB, t0, t0.plusSeconds(3600)).mean())
+                .isEqualTo(1.0); // R:1 in camp-B
     }
 
     @Test
-    void deviceOverlapIsCampaignAgnostic() {
-        // A shared device across two campaigns still produces a SHARES_DEVICE edge.
-        store.registerReferrer(new ReferrerRegistration(loob, "R", "dev-R", "10.0.0.1", code, t0));
-        store.registerReferrer(new ReferrerRegistration(loob, "R", "dev-R", "10.0.0.1", ReferralCode.of("LOOB-R-B"), t0.plusSeconds(1)));
-        store.recordRedemption(new RedemptionRecord(loob, campA, code, "A", "shared-dev", "10.0.0.2", t0.plusSeconds(60)));
-        store.recordRedemption(new RedemptionRecord(loob, campB, ReferralCode.of("LOOB-R-B"), "B", "shared-dev", "10.0.9.9", t0.plusSeconds(90)));
-
-        try (Session session = driver.session()) {
-            long shares = session.run("""
-                    MATCH (:Account {userId:'A'})-[e:SHARES_DEVICE]-(:Account {userId:'B'})
-                    RETURN count(e) AS c
-                    """).single().get("c").asLong();
-            assertThat(shares).isEqualTo(1);
+    void honestFanoutAcrossCampaignsDoesNotCombineIntoVelocityBurst() {
+        ReferralCode codeA = ReferralCode.of("LOOB-HONEST-A");
+        ReferralCode codeB = ReferralCode.of("LOOB-HONEST-B");
+        store.registerReferrer(new ReferrerRegistration(loob, "honest-r", "honest-device", "10.20.0.1", codeA, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, "honest-r", "honest-device", "10.20.0.1", codeB, t0));
+        for (int i = 0; i < 12; i++) {
+            store.recordRedemption(new RedemptionRecord(
+                    loob, campA, codeA, "a-" + i, "a-device-" + i,
+                    "10." + (30 + i) + ".0.1", t0.plusSeconds(i)));
+            store.recordRedemption(new RedemptionRecord(
+                    loob, campB, codeB, "b-" + i, "b-device-" + i,
+                    "10." + (60 + i) + ".0.1", t0.plusSeconds(i)));
         }
+        ScoringWeights weights = ScoringWeights.defaults();
+        RuleBasedScorer scorer = new RuleBasedScorer(weights);
+
+        var scoreA = scorer.score(new ScoringRequest(
+                store.loadNeighbourhood(loob, codeA, campA),
+                store.fanoutBaseline(loob, campA, t0.minus(weights.velocityWindow()), t0.plusSeconds(60)),
+                t0.plusSeconds(60)));
+        var scoreB = scorer.score(new ScoringRequest(
+                store.loadNeighbourhood(loob, codeB, campB),
+                store.fanoutBaseline(loob, campB, t0.minus(weights.velocityWindow()), t0.plusSeconds(60)),
+                t0.plusSeconds(60)));
+
+        assertThat(scoreA.reasonCodes()).doesNotContain(ReasonCode.VELOCITY_BURST);
+        assertThat(scoreB.reasonCodes()).doesNotContain(ReasonCode.VELOCITY_BURST);
+        assertThat(store.loadNeighbourhood(loob, codeA, campA).fanoutOfReferrer()).hasSize(12);
+        assertThat(store.loadNeighbourhood(loob, codeB, campB).fanoutOfReferrer()).hasSize(12);
+    }
+
+    @Test
+    void deviceAndIpOverlapAcrossCampaignsReachTheScorer() {
+        // Shared identity edges remain campaign-agnostic even though REFERRED
+        // traversal and the velocity baseline stay campaign-scoped.
+        store.registerReferrer(new ReferrerRegistration(loob, "R", "dev-R", "10.1.0.1", code, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, "R", "dev-R", "10.1.0.1", ReferralCode.of("LOOB-R-B"), t0.plusSeconds(1)));
+        store.recordRedemption(new RedemptionRecord(loob, campA, code, "A", "shared-dev", "10.0.0.2", t0.plusSeconds(60)));
+        store.recordRedemption(new RedemptionRecord(loob, campB, ReferralCode.of("LOOB-R-B"), "B", "shared-dev", "10.0.0.9", t0.plusSeconds(90)));
+
+        ReferralNeighbourhood campaignA = store.loadNeighbourhood(loob, code, campA);
+        var score = new RuleBasedScorer(ScoringWeights.defaults()).score(new ScoringRequest(
+                campaignA,
+                store.fanoutBaseline(loob, campA, t0, t0.plusSeconds(120)),
+                t0.plusSeconds(120)));
+
+        assertThat(campaignA.referralEdges()).allSatisfy(edge ->
+                assertThat(edge.refereeUserId()).isNotEqualTo("B"));
+        assertThat(campaignA.sharedEdges())
+                .contains(new SharedAttributeEdge("A", "B", SharedAttributeType.DEVICE))
+                .contains(new SharedAttributeEdge("A", "B", SharedAttributeType.IP_SUBNET));
+        assertThat(score.reasonCodes()).containsExactly(
+                ReasonCode.DEVICE_COLLISION, ReasonCode.IP_SUBNET_COLLISION);
+        assertThat(score.value()).isEqualTo(0.75);
     }
 
     @Test

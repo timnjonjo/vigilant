@@ -54,8 +54,12 @@ public class PayoutDecisionService {
         Instant now = clock.instant();
         // Neighbourhood + baseline are scoped to the campaign (spec §10a).
         ReferralNeighbourhood neighbourhood = graphStore.loadNeighbourhood(tenantId, referralCode, campaignId);
+        Instant windowStart = now.minus(scorer.velocityWindow());
         RiskScore score = scorer.score(
-                new ScoringRequest(neighbourhood, graphStore.fanoutBaseline(tenantId, campaignId), now));
+                new ScoringRequest(
+                        neighbourhood,
+                        graphStore.fanoutBaseline(tenantId, campaignId, windowStart, now),
+                        now));
         Decision action = decisionPolicy.classify(score.value());
 
         Long caseId = null;

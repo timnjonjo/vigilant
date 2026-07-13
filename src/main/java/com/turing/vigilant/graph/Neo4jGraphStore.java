@@ -192,6 +192,23 @@ public class Neo4jGraphStore implements GraphStore {
                         .map(Object::toString)
                         .forEach(ids::add);
 
+                Map<String, Object> referralIdParams = Map.of(
+                        "tenantId", tenantId.value(), "ids", ids, "campaignId", campaignId.value());
+
+                // Expand the campaign-scoped referral component by one shared-attribute
+                // hop. This keeps referral traversal scoped to the requested campaign,
+                // while making a device/IP neighbour from another campaign visible to
+                // collision scoring as required by spec section 10a.
+                tx.run("""
+                        MATCH (a:Account {tenantId: $tenantId})
+                              -[:SHARES_DEVICE|SHARES_IP_SUBNET]-
+                              (b:Account {tenantId: $tenantId})
+                        WHERE a.userId IN $ids
+                        RETURN DISTINCT b.userId AS userId
+                        """, referralIdParams).list(row -> row.get("userId").asString()).stream()
+                        .filter(id -> !ids.contains(id))
+                        .forEach(ids::add);
+
                 Map<String, Object> idParams = Map.of(
                         "tenantId", tenantId.value(), "ids", ids, "campaignId", campaignId.value());
 
@@ -234,15 +251,23 @@ public class Neo4jGraphStore implements GraphStore {
     }
 
     @Override
-    public FanoutBaseline fanoutBaseline(TenantId tenantId, CampaignId campaignId) {
+    public FanoutBaseline fanoutBaseline(
+            TenantId tenantId, CampaignId campaignId, Instant windowStart, Instant windowEnd) {
         try (Session session = driver.session()) {
             return session.executeRead(tx -> {
-                // Baseline over referrers active in THIS campaign only (spec §10a).
+                // Compare like with like: each population fan-out uses the same rolling
+                // time window as VelocityBurstRule's observed fan-out, and only the
+                // requested campaign contributes (spec sections 5 and 10a).
                 var row = tx.run("""
                         MATCH (r:Account {tenantId: $tenantId})-[e:REFERRED {campaignId: $campaignId}]->()
+                        WHERE e.createdAt >= $windowStart AND e.createdAt <= $windowEnd
                         WITH r, count(e) AS fanout
                         RETURN sum(fanout) AS total, sum(fanout * fanout) AS sumSq, count(r) AS n
-                        """, Map.of("tenantId", tenantId.value(), "campaignId", campaignId.value())).single();
+                        """, Map.of(
+                                "tenantId", tenantId.value(),
+                                "campaignId", campaignId.value(),
+                                "windowStart", windowStart.toEpochMilli(),
+                                "windowEnd", windowEnd.toEpochMilli())).single();
 
                 long n = row.get("n").asLong(0);
                 if (n == 0) {

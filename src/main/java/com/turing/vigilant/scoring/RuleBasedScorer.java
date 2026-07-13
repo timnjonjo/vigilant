@@ -7,6 +7,7 @@ import com.turing.vigilant.scoring.rules.IpSubnetCollisionRule;
 import com.turing.vigilant.scoring.rules.VelocityBurstRule;
 import com.turing.vigilant.shared.ReasonCode;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -18,6 +19,7 @@ import java.util.List;
 public class RuleBasedScorer {
 
     private final List<ScoringRule> rules;
+    private final Duration velocityWindow;
 
     public RuleBasedScorer(ScoringWeights weights) {
         this(List.of(
@@ -25,11 +27,21 @@ public class RuleBasedScorer {
                 new DeviceCollisionRule(weights),
                 new IpSubnetCollisionRule(weights),
                 new CycleDetectionRule(weights),
-                new DatacenterIpRule(weights)));
+                new DatacenterIpRule(weights)), weights.velocityWindow());
     }
 
     public RuleBasedScorer(List<ScoringRule> rules) {
+        this(rules, ScoringWeights.defaults().velocityWindow());
+    }
+
+    private RuleBasedScorer(List<ScoringRule> rules, Duration velocityWindow) {
         this.rules = List.copyOf(rules);
+        this.velocityWindow = velocityWindow;
+    }
+
+    /** The window used by both the observed fan-out and its graph-store baseline. */
+    public Duration velocityWindow() {
+        return velocityWindow;
     }
 
     public RiskScore score(ScoringRequest request) {

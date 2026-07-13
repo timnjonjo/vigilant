@@ -2,7 +2,14 @@ package com.turing.vigilant.ipreputation;
 
 import com.turing.vigilant.shared.IpType;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.io.ClassPathResource;
 
+import java.io.IOException;
+import java.util.HashSet;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,6 +44,27 @@ class LocalAsnReputationCheckerTest {
 
         assertThat(result.type()).isEqualTo(IpType.MOBILE);
         assertThat(result.riskScore()).isZero();
+    }
+
+    @Test
+    void configuredKenyanCarrierAllowlistClassifiesEveryCarrierAsMobile() throws IOException {
+        var source = new YamlPropertySourceLoader()
+                .load("application", new ClassPathResource("application.yaml")).get(0);
+        IpReputationProperties properties = new Binder(ConfigurationPropertySources.from(source))
+                .bind("vigilant.ip-reputation", Bindable.of(IpReputationProperties.class))
+                .orElseThrow(() -> new AssertionError("IP reputation properties did not bind"));
+        var configuredCatalog = new DatacenterAsnCatalog(
+                new HashSet<>(properties.getDatacenterAsns()),
+                new HashSet<>(properties.getKenyanCarrierAsns()));
+
+        assertThat(properties.getKenyanCarrierAsns())
+                .containsExactlyInAnyOrder(33771L, 37287L, 12455L);
+        assertThat(properties.getKenyanCarrierAsns()).allSatisfy(asn -> {
+            var checker = new LocalAsnReputationChecker(StubAsnResolver.returning(asn), configuredCatalog);
+            assertThat(checker.check("197.232.14.88"))
+                    .extracting(IpReputationResult::type, IpReputationResult::riskScore)
+                    .containsExactly(IpType.MOBILE, 0.0);
+        });
     }
 
     @Test

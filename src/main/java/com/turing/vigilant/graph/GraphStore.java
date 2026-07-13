@@ -7,6 +7,7 @@ import com.turing.vigilant.shared.CampaignId;
 import com.turing.vigilant.shared.ReferralCode;
 import com.turing.vigilant.shared.TenantId;
 
+import java.time.Instant;
 import java.util.Optional;
 
 /**
@@ -38,7 +39,8 @@ public interface GraphStore {
      * campaign</em> (spec §10a) — a high-incentive campaign naturally draws more
      * aggressive referral activity than a low-incentive one.
      */
-    FanoutBaseline fanoutBaseline(TenantId tenantId, CampaignId campaignId);
+    FanoutBaseline fanoutBaseline(
+            TenantId tenantId, CampaignId campaignId, Instant windowStart, Instant windowEnd);
 
     /** Resolves the referrer's userId for a referral code, if issued. */
     Optional<String> findReferrerUserId(TenantId tenantId, ReferralCode referralCode);
