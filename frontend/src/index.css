@@ -1,0 +1,65 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens — the whole visual system lives here as CSS variables, so a
+ * light theme later is a variable swap, not a rewrite. Rules of the system:
+ *   1. Chrome is monochrome. Saturated colour ONLY ever means risk/severity.
+ *   2. All data (scores, IDs, ASNs, KES, timestamps) is set in mono.
+ */
+@theme {
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* Cool ink neutrals — deliberately not pure black. */
+  --color-bg: #0e1116;
+  --color-surface: #161a21;
+  --color-surface-2: #1b2129;
+  --color-border: #232a34;
+  --color-border-strong: #313a47;
+  --color-muted: #8a94a6;
+  --color-faint: #5b6675;
+  --color-text: #e6eaf0;
+
+  /* Risk ramp — the only saturated colours in the app. */
+  --color-risk-low: #3fb950;
+  --color-risk-medium: #e3b341;
+  --color-risk-high: #f85149;
+  --color-risk-critical: #db61a2;
+
+  /* Edge-type language for the graph explorer (also risk-neutral greys where
+     an edge carries no risk on its own). */
+  --color-edge-referred: #8a94a6;
+  --color-edge-device: #e3b341;
+  --color-edge-subnet: #db61a2;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  * {
+    border-color: var(--color-border);
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--color-risk-high) 30%, transparent);
+  }
+
+  /* Quiet, instrument-like scrollbars. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: 6px;
+    border: 2px solid var(--color-bg);
+  }
+}

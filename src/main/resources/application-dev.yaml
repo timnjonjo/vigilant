@@ -1,0 +1,10 @@
+# Local/dev profile (activate with SPRING_PROFILES_ACTIVE=dev).
+#
+# Enables DevDataSeeder, which populates Postgres + Neo4j with a realistic spread
+# of loob-bank cases and matching referral subgraphs so the dashboard is
+# meaningful on first login. Never active in prod.
+vigilant:
+  dev-seed:
+    # false = check-and-skip (default; preserves manual resolutions across restarts).
+    # true  = clear this tenant's cases + graph and reseed from scratch.
+    reset: false

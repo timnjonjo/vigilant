@@ -1,0 +1,11 @@
+# Production profile overrides (activate with SPRING_PROFILES_ACTIVE=prod).
+#
+# The interactive, auth-enabled API explorer is a developer convenience — not
+# something a live fintech-facing deployment should expose by default. Turning
+# off both the raw spec and the UI leaves no OpenAPI surface reachable unless a
+# prod deploy deliberately re-enables it.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

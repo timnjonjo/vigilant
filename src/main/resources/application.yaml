@@ -1,0 +1,94 @@
+spring:
+  application:
+    name: Vigilant
+
+  # Running the app (spring-boot:run or the IDE run config) brings up the
+  # docker-compose backends and waits for them to be healthy. start-only leaves
+  # them running after the app stops, for a fast dev loop. Auto-skipped in tests.
+  docker:
+    compose:
+      lifecycle-management: start-only
+
+  # Dashboard auth: OIDC resource server validating Keycloak-issued JWTs. Uses
+  # jwk-set-uri (lazy — no Keycloak call at startup or in tests). Only the
+  # dashboard endpoints (/v1/cases, /v1/monitoring) sit behind this; the host
+  # integration endpoints stay on the per-tenant API key (spec §7).
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8081/realms/vigilant/protocol/openid-connect/certs}
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/vigilant}
+
+  # Graph store (system of record for the referral graph)
+  neo4j:
+    uri: ${SPRING_NEO4J_URI:bolt://localhost:7687}
+    authentication:
+      username: ${SPRING_NEO4J_AUTHENTICATION_USERNAME:neo4j}
+      password: ${SPRING_NEO4J_AUTHENTICATION_PASSWORD:vigilant-dev}
+
+  # Case queue / audit trail (separate from the graph store)
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/vigilant}
+    username: ${SPRING_DATASOURCE_USERNAME:vigilant}
+    password: ${SPRING_DATASOURCE_PASSWORD:vigilant-dev}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+# Per-tenant configuration. Tenants are scoped from day one; Loob Bank is the
+# first onboarded client. Inbound auth is via Keycloak (per-tenant tenant_id
+# claim); callbackUrl is where HOLD-case resolutions are POSTed back to the host.
+vigilant:
+  tenants:
+    loob-bank:
+      callback-url: ${LOOB_BANK_CALLBACK_URL:http://localhost:9090/vigilant/callback}
+  scoring:
+    # Score bands (0.0–1.0). score < hold -> APPROVE; hold <= score < reject -> HOLD; >= reject -> REJECT
+    hold-threshold: 0.40
+    reject-threshold: 0.75
+
+  # IP reputation (Tier 1): local ASN lookup, zero network calls at runtime.
+  # database-path points at DB-IP's free IP-to-ASN Lite .mmdb (see module README
+  # for provisioning). The service fails fast at startup if the file is missing.
+  ip-reputation:
+    # Default points at the host bind mount the `geoip` compose service populates
+    # (repo-root `.local/geoip`).
+    database-path: ${VIGILANT_ASN_DB:./.local/geoip/dbip-asn-lite.mmdb}
+    # Cloud/hosting ASNs -> DATACENTER. Extend without code changes.
+    datacenter-asns:
+      - 16509   # Amazon AWS
+      - 14618   # Amazon AWS
+      - 15169   # Google Cloud
+      - 8075    # Microsoft Azure
+      - 14061   # DigitalOcean
+      - 63949   # Akamai/Linode
+      - 16276   # OVH
+      - 24940   # Hetzner
+      - 20473   # Vultr / Choopa
+      - 45102   # Alibaba Cloud
+    # Known-good Kenyan mobile carriers -> MOBILE (short-circuits false positives
+    # on CGNAT'd mobile ranges). VERIFY against current BGP data before production.
+    kenyan-carrier-asns:
+      - 33771   # Safaricom
+      - 37287   # Airtel Networks Kenya
+      - 12455   # Telkom Kenya (Orange)
+
+# OpenAPI / Swagger UI. Docs live at /swagger-ui.html; the raw spec at /v3/api-docs.
+# Dev convenience only — disabled under the `prod` profile (application-prod.yaml).
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    # OAuth2 Authorization Code + PKCE against Keycloak. Uses the dedicated public
+    # `vigilant-swagger` client (distinct from the dashboard SPA client). The
+    # redirect lands on springdoc's /swagger-ui/oauth2-redirect.html.
+    oauth:
+      client-id: vigilant-swagger
+      use-pkce-with-authorization-code-grant: true
+      use-basic-authentication-with-access-code-header: false
+      scopes: openid

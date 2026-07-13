@@ -1,0 +1,84 @@
+@startuml referral_fraud_engine_flow_v2
+title Referral Journey with Fraud Engine (Signup Never Blocked - Payout is the Gate)
+
+actor "Referrer\n(User A)" as ReferrerUser
+actor "Referee\n(User B)" as RefereeUser
+participant "Host System\n(Bank App/)" as Host
+participant "Vigilant Engine\nAPI" as Engine
+database "Graph Store\n(Neo4j)" as Graph
+participant "Scoring\nEngine" as Scorer
+participant "Case Queue /\nDashboard" as Dashboard
+
+== Step 1: Code Request ==
+ReferrerUser -> Host: Request referral code
+Host -> Engine: POST /v1/codes/generate\n{userId, deviceId, ipAddress}
+Engine -> Graph: check identity fingerprint\n(existing nodes with same device/IP?)
+Graph --> Engine: fingerprint match results
+Engine -> Scorer: pre-check identity risk
+Scorer --> Engine: risk score
+Engine -> Graph: create/update referrer node\n(regardless of risk - just tagged if risky)
+Engine --> Host: {status: ISSUED, referralCode, riskFlag}
+Host --> ReferrerUser: Referral code returned
+
+note right of Engine
+  Code issuance is never denied.
+  A risky identity is tagged on the
+  node so it carries forward into
+  later scoring, not blocked here.
+end note
+
+== Step 2: Sharing (no system event) ==
+ReferrerUser -> RefereeUser: Shares referral code\n(out of band - WhatsApp/SMS/etc)
+
+== Step 3: Redemption - always allowed ==
+RefereeUser -> Host: Signs up using referral code
+Host -> Engine: POST /v1/events/redemption\n{referralCode, newUserId, deviceId, ipAddress}
+Engine -> Graph: create REFERRED edge\n+ SHARES_DEVICE / SHARES_IP edges if matched
+Engine -> Scorer: run cheap real-time checks\n(velocity, device/IP collision)
+Scorer --> Engine: redemption-time risk score
+Engine -> Dashboard: soft-flag case if risk elevated\n(async, informational only)
+Engine --> Host: {action: ACCEPT}
+Host --> RefereeUser: Signup proceeds normally\n(always)
+
+note right of Host
+  No path here ever rejects
+  or delays the signup itself.
+end note
+
+== Step 4: Conversion (qualifying action) ==
+RefereeUser -> Host: First deposit / transaction / N-day retention met
+Host -> Engine: POST /v1/events/conversion\n{referralCode, refereeUserId, conversionType}
+Engine -> Graph: pull referrer subgraph\n(depth N, multi edge-type)
+Graph --> Engine: subgraph data
+Engine -> Scorer: full scoring pass\n(graph structure + identity overlap + behavioral + prior soft-flags)
+Scorer --> Engine: score + reasonCodes
+
+Host -> Engine: POST /v1/decisions/payout-check\n{referralCode, refereeUserId}
+
+alt score < low threshold
+    Engine --> Host: {action: APPROVE, score}
+    Host -> Host: Release KES 350 bonus to referrer
+    Host --> ReferrerUser: Bonus credited
+else score in medium band
+    Engine --> Host: {action: HOLD, score, reasonCodes}
+    Host --> ReferrerUser: Bonus marked "pending review"
+    Engine -> Dashboard: create case for manual review
+    ...analyst reviews asynchronously...
+    Dashboard -> Engine: analyst decision (approve/reject)
+    Engine -> Host: async webhook: final decision
+    Host -> Host: release or cancel bonus accordingly
+    Host --> ReferrerUser: notified of final outcome
+else score > high threshold
+    Engine --> Host: {action: REJECT, score, reasonCodes}
+    Host -> Host: cancel bonus (never released)
+    Host --> ReferrerUser: bonus not awarded
+    Engine -> Dashboard: log auto-rejected case for audit
+end
+
+== Ongoing: Batch Re-analysis ==
+Graph -> Scorer: nightly job pulls full graph
+Scorer -> Scorer: re-scan for ring patterns\n(cycles, multi-edge overlap, cohort outliers)
+Scorer -> Dashboard: surface newly-detected clusters\n(may retroactively flag already-paid bonuses for clawback review)
+Dashboard -> Dashboard: feed analyst decisions back\nas labeled data for rule/threshold tuning
+
+@enduml

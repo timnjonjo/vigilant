@@ -1,0 +1,171 @@
+# Local dev stack for Vigilant: graph store (Neo4j) + case queue (Postgres) + service.
+# `docker compose up neo4j postgres` for a TDD loop against real backends;
+# `docker compose up` to also build and run the service.
+services:
+  neo4j:
+    image: neo4j:5.26
+    container_name: vigilant-neo4j
+    ports:
+      - "7474:7474"   # HTTP browser
+      - "7687:7687"   # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/vigilant-dev
+      NEO4J_server_memory_pagecache_size: 512M
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "vigilant-dev", "RETURN 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  postgres:
+    image: postgres:16
+    container_name: vigilant-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: vigilant
+      POSTGRES_USER: vigilant
+      POSTGRES_PASSWORD: vigilant-dev
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Creates the separate `keycloak` database on first init (empty volume only).
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vigilant -d vigilant"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # IP-reputation database provisioner: downloads DB-IP's free IP-to-ASN Lite
+  # (CC-BY 4.0, monthly, no account) into a host bind mount so both a host-run app
+  # and the containerised service can read it. Long-running + health-checked so
+  # Spring Boot's docker-compose support waits until the .mmdb exists before the
+  # app starts (the app fail-fasts without it), and refreshes ~monthly so the data
+  # can't go stale. DB-IP has no geoipupdate tool (that's MaxMind-only); a plain
+  # URL fetch is the equivalent automated refresh here.
+  geoip:
+    image: alpine:3.20
+    container_name: vigilant-geoip
+    volumes:
+      - ./.local/geoip:/data/geoip
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        apk add --no-cache curl >/dev/null
+        TARGET=/data/geoip/dbip-asn-lite.mmdb
+        fetch() {
+          MONTH=$$(date +%Y-%m)
+          URL="https://download.db-ip.com/free/dbip-asn-lite-$${MONTH}.mmdb.gz"
+          echo "Fetching $$URL"
+          if curl -fsSL "$$URL" -o /tmp/asn.mmdb.gz; then
+            gunzip -c /tmp/asn.mmdb.gz > "$$TARGET" && echo "Wrote $$TARGET"
+          elif [ -f "$$TARGET" ]; then
+            echo "Download failed; keeping existing $$TARGET"
+          else
+            echo "ERROR: no DB-IP ASN database available and none cached" >&2
+            return 1
+          fi
+        }
+        fetch || exit 1
+        while true; do sleep 2592000; fetch || true; done
+    healthcheck:
+      test: ["CMD", "test", "-f", "/data/geoip/dbip-asn-lite.mmdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
+  # Dashboard auth (spec §8). Production mode against the shared Postgres (its own
+  # `keycloak` DB), realm auto-imported from infra/keycloak — no console clicking.
+  # Under the `auth` profile so it doesn't weigh down the backend TDD loop:
+  #   docker compose --profile auth up      # neo4j + postgres + geoip + keycloak
+  # Ensures Keycloak's database exists before it starts. Idempotent, so it works
+  # on a pre-existing postgres volume too — the initdb SQL only runs on a *fresh*
+  # volume, which is why an older volume left Keycloak with a missing DB.
+  keycloak-db-init:
+    image: postgres:16
+    container_name: vigilant-keycloak-db-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: vigilant-dev
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        psql -h postgres -U vigilant -d vigilant -tc "SELECT 1 FROM pg_database WHERE datname='keycloak'" | grep -q 1 \
+          || psql -h postgres -U vigilant -d vigilant -c "CREATE DATABASE keycloak"
+    profiles:
+      - auth
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    container_name: vigilant-keycloak
+    command: ["start", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: vigilant
+      KC_DB_PASSWORD: vigilant-dev
+      # Single-node dev: skip Infinispan/JGroups clustering (the JDBC_PING2 cluster
+      # discovery that runs *through* Postgres). Removes startup overhead and the
+      # fragility where a Postgres restart wedges Keycloak's DB-backed membership
+      # (the JDBC_PING2 stack traces you saw during teardown).
+      KC_CACHE: local
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - "8081:8080"   # OIDC endpoints (issuer http://localhost:8081/realms/vigilant)
+      - "9000:9000"   # management / health
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak-db-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./infra/keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    profiles:
+      - auth
+
+  vigilant:
+    build: .
+    container_name: vigilant-service
+    ports:
+      - "8080:8080"
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      geoip:
+        condition: service_healthy
+    environment:
+      SPRING_NEO4J_URI: bolt://neo4j:7687
+      SPRING_NEO4J_AUTHENTICATION_USERNAME: neo4j
+      SPRING_NEO4J_AUTHENTICATION_PASSWORD: vigilant-dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/vigilant
+      SPRING_DATASOURCE_USERNAME: vigilant
+      SPRING_DATASOURCE_PASSWORD: vigilant-dev
+      VIGILANT_ASN_DB: /data/geoip/dbip-asn-lite.mmdb
+      # No docker socket/compose file inside the container; keep the module off.
+      SPRING_DOCKER_COMPOSE_ENABLED: "false"
+    volumes:
+      - ./.local/geoip:/data/geoip:ro
+    profiles:
+      - full
+
+volumes:
+  neo4j-data:
+  postgres-data:

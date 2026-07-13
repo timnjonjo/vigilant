@@ -1,0 +1,168 @@
+{
+  "realm": "vigilant",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginTheme": "keycloak",
+  "accessTokenLifespan": 300,
+  "roles": {
+    "realm": [
+      { "name": "fraud_analyst", "description": "Case queue access + approve/hold/reject/escalate" },
+      { "name": "ops_viewer", "description": "Aggregate monitoring only; no case actions" },
+      { "name": "tenant_admin", "description": "Tenant-level admin within own tenant scope" },
+      { "name": "host_integration", "description": "Machine-to-machine host integration (codes/events/decisions); service accounts only" }
+    ]
+  },
+  "groups": [
+    { "name": "loob-bank", "attributes": { "tenant_id": ["loob-bank"] } },
+    { "name": "acme-sacco", "attributes": { "tenant_id": ["acme-sacco"] } }
+  ],
+  "clients": [
+    {
+      "clientId": "vigilant-dashboard",
+      "name": "Vigilant Analyst Console",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173", "+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      },
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "vigilant-swagger",
+      "name": "Vigilant Swagger UI (dev API explorer)",
+      "description": "Dev-only OAuth2 client for the springdoc Swagger UI. Public (PKCE, no secret) — kept distinct from vigilant-dashboard so Swagger access can be revoked independently.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:8080/swagger-ui/oauth2-redirect.html"],
+      "webOrigins": ["http://localhost:8080"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "loob-bank-host",
+      "name": "Loob Bank host integration (M2M)",
+      "description": "Confidential service-account client for server-to-server host integration (codes/events/decisions). Client-credentials grant only.",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "loob-host-dev-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "tenant_id",
+            "claim.value": "loob-bank",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "analyst-loob",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "analyst@loob.example",
+      "firstName": "Amina",
+      "lastName": "Kamau",
+      "attributes": { "tenant_id": ["loob-bank"] },
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["fraud_analyst"],
+      "groups": ["/loob-bank"]
+    },
+    {
+      "username": "ops-loob",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "ops@loob.example",
+      "firstName": "Otieno",
+      "lastName": "Were",
+      "attributes": { "tenant_id": ["loob-bank"] },
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["ops_viewer"],
+      "groups": ["/loob-bank"]
+    },
+    {
+      "username": "admin-loob",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "admin@loob.example",
+      "firstName": "Njeri",
+      "lastName": "Mwangi",
+      "attributes": { "tenant_id": ["loob-bank"] },
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["tenant_admin"],
+      "groups": ["/loob-bank"]
+    },
+    {
+      "username": "analyst-acme",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "analyst@acme.example",
+      "firstName": "Brian",
+      "lastName": "Odhiambo",
+      "attributes": { "tenant_id": ["acme-sacco"] },
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["fraud_analyst"],
+      "groups": ["/acme-sacco"]
+    },
+    {
+      "username": "service-account-loob-bank-host",
+      "enabled": true,
+      "serviceAccountClientId": "loob-bank-host",
+      "realmRoles": ["host_integration"]
+    }
+  ]
+}
