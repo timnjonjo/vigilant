@@ -8,6 +8,8 @@ import com.turing.vigilant.shared.CampaignId;
 import com.turing.vigilant.shared.TenantId;
 import com.turing.vigilant.web.TenantAccessGuard;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,7 +38,7 @@ public class PayoutDecisionController {
     @PostMapping("/v1/decisions/payout-check")
     PayoutCheckResponse payoutCheck(
             @AuthenticationPrincipal Jwt jwt,
-            @RequestBody PayoutCheckRequest request) {
+            @Valid @RequestBody PayoutCheckRequest request) {
         tenantAccessGuard.requireAccess(request.tenantId(), jwt);
         PayoutDecision decision = decisionService.decide(
                 TenantId.of(request.tenantId()),
@@ -48,10 +50,10 @@ public class PayoutDecisionController {
     }
 
     record PayoutCheckRequest(
-            @NotBlank String tenantId,
-            @NotBlank String campaignId,
-            @NotBlank String referralCode,
-            @NotBlank String refereeUserId) {
+            @NotBlank @Size(max = 255) String tenantId,
+            @NotBlank @Size(max = 255) String campaignId,
+            @NotBlank @Size(max = 255) String referralCode,
+            @NotBlank @Size(max = 255) String refereeUserId) {
     }
 
     record PayoutCheckResponse(Decision action, double score, List<ReasonCode> reasonCodes, Long caseId) {

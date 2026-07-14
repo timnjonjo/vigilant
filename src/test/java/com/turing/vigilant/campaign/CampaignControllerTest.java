@@ -3,6 +3,7 @@ package com.turing.vigilant.campaign;
 import com.turing.vigilant.web.ApiExceptionHandler;
 import com.turing.vigilant.web.SecurityConfig;
 import com.turing.vigilant.web.TenantAccessGuard;
+import com.turing.vigilant.web.pagination.CursorPage;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -19,6 +20,8 @@ import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -38,6 +41,8 @@ class CampaignControllerTest {
 
     @MockitoBean
     CampaignService campaignService;
+    @MockitoBean
+    CampaignPageService campaignPageService;
     @MockitoBean
     JwtDecoder jwtDecoder;
 
@@ -83,7 +88,8 @@ class CampaignControllerTest {
 
     @Test
     void analystMayReadCampaignsForTheFilter() throws Exception {
-        when(campaignService.list(any())).thenReturn(java.util.List.of(stubCampaign()));
+        when(campaignPageService.page(any(), any(), any(Integer.class)))
+                .thenReturn(new CursorPage<>(java.util.List.of(CampaignView.of(stubCampaign())), null));
         mockMvc.perform(get("/v1/campaigns").with(role("loob-bank", "fraud_analyst"))
                         .param("tenantId", "loob-bank"))
                 .andExpect(status().isOk());
@@ -101,5 +107,17 @@ class CampaignControllerTest {
     void unauthenticatedIsRejected() throws Exception {
         mockMvc.perform(get("/v1/campaigns").param("tenantId", "loob-bank"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void validatesCampaignCreationBeforeCallingTheService() throws Exception {
+        mockMvc.perform(post("/v1/campaigns").with(role("loob-bank", "tenant_admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"tenantId":"loob-bank","name":" ","bonusAmount":-1}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verify(campaignService, never()).create(any(), any(), any(), any(), any(), any(), any(), any());
     }
 }

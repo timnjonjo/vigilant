@@ -133,9 +133,9 @@ class VigilantApplicationTests {
                         .param("tenantId", "loob-bank")
                         .param("status", "OPEN"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].refereeUserId").value("referee-A"))
-                .andExpect(jsonPath("$[0].decision").value("HOLD"))
-                .andExpect(jsonPath("$[0].status").value("OPEN"));
+                .andExpect(jsonPath("$.items[0].refereeUserId").value("referee-A"))
+                .andExpect(jsonPath("$.items[0].decision").value("HOLD"))
+                .andExpect(jsonPath("$.items[0].status").value("OPEN"));
 
         // 6. The case's subgraph renders for the analyst's graph explorer: the two
         //    referees appear as nodes and the shared-device edge is present.

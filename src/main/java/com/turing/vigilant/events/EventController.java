@@ -5,6 +5,8 @@ import com.turing.vigilant.shared.ReferralCode;
 import com.turing.vigilant.shared.TenantId;
 import com.turing.vigilant.web.TenantAccessGuard;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -35,7 +37,7 @@ public class EventController {
     @PostMapping("/v1/events/redemption")
     RedemptionResponse redemption(
             @AuthenticationPrincipal Jwt jwt,
-            @RequestBody RedemptionRequest request) {
+            @Valid @RequestBody RedemptionRequest request) {
         tenantAccessGuard.requireAccess(request.tenantId(), jwt);
         ingestionService.recordRedemption(
                 TenantId.of(request.tenantId()),
@@ -52,7 +54,7 @@ public class EventController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     void conversion(
             @AuthenticationPrincipal Jwt jwt,
-            @RequestBody ConversionRequest request) {
+            @Valid @RequestBody ConversionRequest request) {
         tenantAccessGuard.requireAccess(request.tenantId(), jwt);
         ingestionService.recordConversion(
                 TenantId.of(request.tenantId()),
@@ -64,12 +66,12 @@ public class EventController {
     }
 
     record RedemptionRequest(
-            @NotBlank String tenantId,
-            @NotBlank String campaignId,
-            @NotBlank String referralCode,
-            @NotBlank String newUserId,
-            String deviceId,
-            String ipAddress,
+            @NotBlank @Size(max = 255) String tenantId,
+            @NotBlank @Size(max = 255) String campaignId,
+            @NotBlank @Size(max = 255) String referralCode,
+            @NotBlank @Size(max = 255) String newUserId,
+            @Size(max = 255) String deviceId,
+            @Size(max = 45) String ipAddress,
             Instant timestamp) {
     }
 
@@ -77,11 +79,11 @@ public class EventController {
     }
 
     record ConversionRequest(
-            @NotBlank String tenantId,
-            @NotBlank String campaignId,
-            @NotBlank String referralCode,
-            @NotBlank String refereeUserId,
-            String conversionType,
+            @NotBlank @Size(max = 255) String tenantId,
+            @NotBlank @Size(max = 255) String campaignId,
+            @NotBlank @Size(max = 255) String referralCode,
+            @NotBlank @Size(max = 255) String refereeUserId,
+            @Size(max = 64) String conversionType,
             Instant timestamp) {
     }
 }

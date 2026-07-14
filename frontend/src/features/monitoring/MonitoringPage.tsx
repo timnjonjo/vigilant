@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from '../../api'
+import { collectCursorPages } from '../../api/pagination'
 import { useSession } from '../../auth/session'
 import { ErrorNote } from '../../components/ErrorNote'
 import { LoadingRows } from '../../components/LoadingState'
@@ -15,7 +16,10 @@ import { TopCodesTable } from './TopCodesTable'
 export function MonitoringPage() {
   const { tenantId } = useSession()
   const [campaignId, setCampaignId] = useState('')
-  const { data: campaigns } = useAsync(() => api.listCampaigns(tenantId), [tenantId])
+  const { data: campaigns } = useAsync(
+    () => collectCursorPages((cursor) => api.listCampaigns(tenantId, cursor, 100)),
+    [tenantId],
+  )
   const { data, loading, error } = useAsync(
     () => api.getMonitoring(tenantId, 30, campaignId || undefined),
     [tenantId, campaignId],

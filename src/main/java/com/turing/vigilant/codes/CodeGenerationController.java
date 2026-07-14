@@ -5,6 +5,8 @@ import com.turing.vigilant.shared.CampaignId;
 import com.turing.vigilant.shared.TenantId;
 import com.turing.vigilant.web.TenantAccessGuard;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,7 +32,7 @@ public class CodeGenerationController {
     @PostMapping("/v1/codes/generate")
     GenerateCodeResponse generate(
             @AuthenticationPrincipal Jwt jwt,
-            @RequestBody GenerateCodeRequest request) {
+            @Valid @RequestBody GenerateCodeRequest request) {
         tenantAccessGuard.requireAccess(request.tenantId(), jwt);
         IssuedCode issued = issuanceService.issue(
                 TenantId.of(request.tenantId()),
@@ -42,11 +44,11 @@ public class CodeGenerationController {
     }
 
     record GenerateCodeRequest(
-            @NotBlank String tenantId,
-            @NotBlank String campaignId,
-            @NotBlank String userId,
-            String deviceId,
-            String ipAddress) {
+            @NotBlank @Size(max = 255) String tenantId,
+            @NotBlank @Size(max = 255) String campaignId,
+            @NotBlank @Size(max = 255) String userId,
+            @Size(max = 255) String deviceId,
+            @Size(max = 45) String ipAddress) {
     }
 
     record GenerateCodeResponse(String status, String referralCode, boolean riskFlag) {

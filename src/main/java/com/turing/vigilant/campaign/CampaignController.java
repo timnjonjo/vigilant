@@ -3,9 +3,13 @@ package com.turing.vigilant.campaign;
 import com.turing.vigilant.shared.CampaignId;
 import com.turing.vigilant.shared.TenantId;
 import com.turing.vigilant.web.TenantAccessGuard;
+import com.turing.vigilant.web.pagination.CursorPage;
+import com.turing.vigilant.web.pagination.PageLimits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -33,16 +37,20 @@ import java.util.List;
 public class CampaignController {
 
     private final CampaignService campaignService;
+    private final CampaignPageService campaignPageService;
     private final TenantAccessGuard tenantAccessGuard;
 
-    public CampaignController(CampaignService campaignService, TenantAccessGuard tenantAccessGuard) {
+    public CampaignController(CampaignService campaignService,
+                              CampaignPageService campaignPageService,
+                              TenantAccessGuard tenantAccessGuard) {
         this.campaignService = campaignService;
+        this.campaignPageService = campaignPageService;
         this.tenantAccessGuard = tenantAccessGuard;
     }
 
     @PostMapping("/v1/campaigns")
     @ResponseStatus(HttpStatus.CREATED)
-    CampaignView create(@AuthenticationPrincipal Jwt jwt, @RequestBody CreateCampaignRequest request) {
+    CampaignView create(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CreateCampaignRequest request) {
         tenantAccessGuard.requireAccess(request.tenantId(), jwt);
         Campaign campaign = campaignService.create(
                 TenantId.of(request.tenantId()), request.name(), request.bonusAmount(),
@@ -52,9 +60,14 @@ public class CampaignController {
     }
 
     @GetMapping("/v1/campaigns")
-    List<CampaignView> list(@AuthenticationPrincipal Jwt jwt, @RequestParam String tenantId) {
+    CursorPage<CampaignView> list(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam String tenantId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "25") int limit) {
         tenantAccessGuard.requireAccess(tenantId, jwt);
-        return campaignService.list(TenantId.of(tenantId)).stream().map(CampaignView::of).toList();
+        return campaignPageService.page(
+                TenantId.of(tenantId), cursor, PageLimits.requireValid(limit));
     }
 
     @GetMapping("/v1/campaigns/{campaignId}")
@@ -68,7 +81,7 @@ public class CampaignController {
     @PatchMapping("/v1/campaigns/{campaignId}")
     CampaignView update(@AuthenticationPrincipal Jwt jwt,
                         @PathVariable String campaignId,
-                        @RequestBody UpdateCampaignRequest request) {
+                        @Valid @RequestBody UpdateCampaignRequest request) {
         tenantAccessGuard.requireAccess(request.tenantId(), jwt);
         Campaign campaign = campaignService.update(
                 TenantId.of(request.tenantId()), CampaignId.of(campaignId), request.name(),
@@ -78,8 +91,8 @@ public class CampaignController {
     }
 
     record CreateCampaignRequest(
-            @NotBlank String tenantId,
-            @NotBlank String name,
+            @NotBlank @Size(max = 255) String tenantId,
+            @NotBlank @Size(max = 255) String name,
             @NotNull @PositiveOrZero BigDecimal bonusAmount,
             LocalDate startDate,
             LocalDate endDate,
@@ -90,8 +103,8 @@ public class CampaignController {
 
     /** All fields except tenantId are optional — PATCH applies only what's present. */
     record UpdateCampaignRequest(
-            @NotBlank String tenantId,
-            String name,
+            @NotBlank @Size(max = 255) String tenantId,
+            @Size(max = 255) String name,
             BigDecimal bonusAmount,
             LocalDate startDate,
             LocalDate endDate,

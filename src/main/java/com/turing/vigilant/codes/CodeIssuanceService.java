@@ -4,10 +4,14 @@ import com.turing.vigilant.campaign.CampaignService;
 import com.turing.vigilant.graph.GraphCommands.ReferrerRegistration;
 import com.turing.vigilant.graph.GraphStore;
 import com.turing.vigilant.ipreputation.IpReputationChecker;
+import com.turing.vigilant.ipreputation.IpAddresses;
 import com.turing.vigilant.shared.CampaignId;
 import com.turing.vigilant.shared.IpType;
 import com.turing.vigilant.shared.ReferralCode;
+import com.turing.vigilant.shared.DomainEvent;
 import com.turing.vigilant.shared.TenantId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -21,6 +25,8 @@ import java.time.Clock;
  */
 @Service
 public class CodeIssuanceService {
+
+    private static final Logger log = LoggerFactory.getLogger(CodeIssuanceService.class);
 
     private final GraphStore graphStore;
     private final com.turing.vigilant.codes.ReferralCodeGenerator generator;
@@ -40,15 +46,25 @@ public class CodeIssuanceService {
     public IssuedCode issue(TenantId tenantId, CampaignId campaignId, String userId,
                             String deviceId, String ipAddress) {
         campaignService.requireActiveCampaign(tenantId, campaignId);
+        String normalizedIpAddress = IpAddresses.normalizeLiteralOrNull(ipAddress);
         ReferralCode code = generator.generate(tenantId, userId);
         graphStore.registerReferrer(new ReferrerRegistration(
-                tenantId, userId, deviceId, ipAddress, code, clock.instant(),
-                reputationTypeOf(ipAddress)));
-        boolean riskFlag = graphStore.identityCollisionExists(tenantId, userId, deviceId, ipAddress);
+                tenantId, campaignId, userId, deviceId, normalizedIpAddress, code, clock.instant(),
+                reputationTypeOf(normalizedIpAddress)));
+        boolean riskFlag = graphStore.identityCollisionExists(
+                tenantId, userId, deviceId, normalizedIpAddress);
+        // Safe fields only: tenant/campaign/code + the risk flag. The referrer's
+        // userId, deviceId and IP are identity/PII and are deliberately not logged.
+        DomainEvent.of(log, "code_issued")
+                .field("tenantId", tenantId.value())
+                .field("campaignId", campaignId.value())
+                .field("referralCode", code.value())
+                .field("riskFlag", riskFlag)
+                .log();
         return new IssuedCode(code, riskFlag);
     }
 
-    /** Classifies the IP, tolerating null/malformed input — issuance is never gated. */
+    /** Classifies a normalized IP; missing/invalid source input is represented as UNKNOWN. */
     private IpType reputationTypeOf(String ipAddress) {
         if (ipAddress == null || ipAddress.isBlank()) {
             return IpType.UNKNOWN;

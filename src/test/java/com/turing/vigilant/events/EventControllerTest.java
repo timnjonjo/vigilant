@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -96,5 +97,18 @@ class EventControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void rejectsBlankRequiredEventFieldsBeforeIngestion() throws Exception {
+        mockMvc.perform(post("/v1/events/redemption")
+                        .with(host("loob-bank"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"tenantId":"loob-bank","campaignId":"camp-1","referralCode":" ","newUserId":"u2"}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verify(ingestionService, never()).recordRedemption(any(), any(), any(), any(), any(), any(), any());
     }
 }

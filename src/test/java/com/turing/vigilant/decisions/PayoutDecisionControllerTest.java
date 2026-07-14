@@ -21,6 +21,8 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -93,5 +95,30 @@ class PayoutDecisionControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(BODY))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void invalidPayoutSubjectFailsClosed() throws Exception {
+        when(decisionService.decide(any(), any(), any(), any()))
+                .thenThrow(new PayoutNotEligibleException());
+
+        mockMvc.perform(post("/v1/decisions/payout-check")
+                        .with(host("loob-bank"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(BODY))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void rejectsBlankRequiredFieldsBeforeDecisioning() throws Exception {
+        mockMvc.perform(post("/v1/decisions/payout-check")
+                        .with(host("loob-bank"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"tenantId":"loob-bank","campaignId":"camp-1","referralCode":" ","refereeUserId":"u2"}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verify(decisionService, never()).decide(any(), any(), any(), any());
     }
 }

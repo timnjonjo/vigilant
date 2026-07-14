@@ -11,7 +11,7 @@ import java.time.Instant;
  * Write commands accepted by the {@link GraphStore}, one per lifecycle event in
  * the vertical slice: issuance → redemption → conversion. Redemption/conversion
  * carry the {@code campaignId} that lands on the {@code REFERRED} edge (spec
- * §10a). Issuance does not — a referrer node can hold codes for many campaigns.
+ * §10a). Issuance binds each generated code to one campaign.
  */
 public final class GraphCommands {
 
@@ -21,6 +21,7 @@ public final class GraphCommands {
     /** Code issuance: create/update the referrer node with its fingerprint. */
     public record ReferrerRegistration(
             TenantId tenantId,
+            CampaignId campaignId,
             String userId,
             String deviceId,
             String ipAddress,
@@ -29,9 +30,9 @@ public final class GraphCommands {
             IpType ipType) {
 
         /** Back-compat overload for callers that don't classify the IP; defaults to UNKNOWN. */
-        public ReferrerRegistration(TenantId tenantId, String userId, String deviceId,
-                                    String ipAddress, ReferralCode referralCode, Instant at) {
-            this(tenantId, userId, deviceId, ipAddress, referralCode, at, IpType.UNKNOWN);
+        public ReferrerRegistration(TenantId tenantId, CampaignId campaignId, String userId,
+                                    String deviceId, String ipAddress, ReferralCode referralCode, Instant at) {
+            this(tenantId, campaignId, userId, deviceId, ipAddress, referralCode, at, IpType.UNKNOWN);
         }
     }
 

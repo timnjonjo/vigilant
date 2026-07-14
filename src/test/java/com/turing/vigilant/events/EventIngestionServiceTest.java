@@ -17,6 +17,8 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -36,6 +38,7 @@ class EventIngestionServiceTest {
 
     @Test
     void classifiesTheRedemptionIpAndStoresItOnTheNode() {
+        when(graphStore.referralCodeExists(TENANT, CAMPAIGN, CODE)).thenReturn(true);
         when(ipChecker.check("203.0.113.7"))
                 .thenReturn(new IpReputationResult(IpType.DATACENTER, 0.70, "local-asn"));
 
@@ -49,14 +52,23 @@ class EventIngestionServiceTest {
     }
 
     @Test
-    void aMalformedIpDoesNotFailIngestionAndStoresUnknown() {
-        // check() throws on a bad literal; ingestion must swallow it (never gate signup).
-        when(ipChecker.check("garbage")).thenThrow(new IllegalArgumentException("bad"));
+    void aMalformedIpDoesNotFailIngestionOrPolluteTheGraph() {
+        when(graphStore.referralCodeExists(TENANT, CAMPAIGN, CODE)).thenReturn(true);
 
         service.recordRedemption(TENANT, CAMPAIGN, CODE, "u3", "dev", "garbage", null);
 
         ArgumentCaptor<RedemptionRecord> captor = ArgumentCaptor.forClass(RedemptionRecord.class);
         verify(graphStore).recordRedemption(captor.capture());
         assertThat(captor.getValue().ipType()).isEqualTo(IpType.UNKNOWN);
+        assertThat(captor.getValue().ipAddress()).isNull();
+    }
+
+    @Test
+    void rejectsACodeThatWasNotIssuedForTheClaimedCampaign() {
+        assertThatThrownBy(() -> service.recordRedemption(
+                TENANT, CAMPAIGN, CODE, "u3", "dev", "10.0.0.1", null))
+                .isInstanceOf(ReferralEventNotFoundException.class);
+
+        verify(graphStore, never()).recordRedemption(org.mockito.ArgumentMatchers.any());
     }
 }

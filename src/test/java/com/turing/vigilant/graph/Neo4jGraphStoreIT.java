@@ -25,6 +25,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import java.time.Instant;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -65,7 +66,7 @@ class Neo4jGraphStoreIT {
 
     @Test
     void materialisesReferralAndDeviceCollisionEdges() {
-        store.registerReferrer(new ReferrerRegistration(loob, "R", "dev-R", "10.0.0.1", code, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, campA, "R", "dev-R", "10.0.0.1", code, t0));
         // Two referees redeem R's code sharing device "dev-shared".
         store.recordRedemption(new RedemptionRecord(loob, campA, code, "A", "dev-shared", "10.0.0.2", t0.plusSeconds(60)));
         store.recordRedemption(new RedemptionRecord(loob, campA, code, "B", "dev-shared", "10.0.0.3", t0.plusSeconds(120)));
@@ -86,7 +87,7 @@ class Neo4jGraphStoreIT {
 
     @Test
     void persistsIpTypeOnAccountsAndSurfacesItInTheNeighbourhood() {
-        store.registerReferrer(new ReferrerRegistration(loob, "R", "dev-R", "10.0.0.1", code, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, campA, "R", "dev-R", "10.0.0.1", code, t0));
         // Referee A redeems from a datacenter IP; the classification is stored on the node.
         store.recordRedemption(new RedemptionRecord(
                 loob, campA, code, "A", "dev-A", "203.0.113.7", t0.plusSeconds(60), IpType.DATACENTER));
@@ -100,16 +101,16 @@ class Neo4jGraphStoreIT {
 
     @Test
     void recordsConversionOnTheCampaignReferredEdge() {
-        store.registerReferrer(new ReferrerRegistration(loob, "R", "dev-R", "10.0.0.1", code, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, campA, "R", "dev-R", "10.0.0.1", code, t0));
         store.recordRedemption(new RedemptionRecord(loob, campA, code, "A", "dev-A", "10.0.0.2", t0.plusSeconds(60)));
 
         store.recordConversion(new ConversionRecord(loob, campA, code, "A", "DEPOSIT", t0.plusSeconds(3600)));
 
         try (Session session = driver.session()) {
             boolean converted = session.run("""
-                    MATCH (a:Account {tenantId:'loob-bank'})
+                    MATCH (:ReferralCode {tenantId:'loob-bank', code:'LOOB-R1'})
+                          -[:ISSUED_TO]->(a:Account {tenantId:'loob-bank'})
                           -[ref:REFERRED {campaignId:'camp-A'}]->(:Account {tenantId:'loob-bank', userId:'A'})
-                    WHERE 'LOOB-R1' IN a.referralCodes
                     RETURN ref.converted AS converted
                     """).single().get("converted").asBoolean();
             assertThat(converted).isTrue();
@@ -120,8 +121,8 @@ class Neo4jGraphStoreIT {
     void computesFanoutBaselineOverCampaignReferrersOnly() {
         // R1 refers A,B in camp-A (fan-out 2); R2 refers C in camp-A (fan-out 1).
         // Referees are not referrers and must not count towards the baseline.
-        store.registerReferrer(new ReferrerRegistration(loob, "R1", "d1", "10.0.0.1", code, t0));
-        store.registerReferrer(new ReferrerRegistration(loob, "R2", "d2", "10.0.1.1", ReferralCode.of("LOOB-R2"), t0));
+        store.registerReferrer(new ReferrerRegistration(loob, campA, "R1", "d1", "10.0.0.1", code, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, campA, "R2", "d2", "10.0.1.1", ReferralCode.of("LOOB-R2"), t0));
         store.recordRedemption(new RedemptionRecord(loob, campA, code, "A", "da", "10.0.0.2", t0.plusSeconds(60)));
         store.recordRedemption(new RedemptionRecord(loob, campA, code, "B", "db", "10.0.0.3", t0.plusSeconds(60)));
         store.recordRedemption(new RedemptionRecord(loob, campA, ReferralCode.of("LOOB-R2"), "C", "dc", "10.0.2.2", t0.plusSeconds(60)));
@@ -141,14 +142,14 @@ class Neo4jGraphStoreIT {
         ReferralCode recentR1 = ReferralCode.of("LOOB-RECENT-1");
         ReferralCode recentR2 = ReferralCode.of("LOOB-RECENT-2");
         store.registerReferrer(new ReferrerRegistration(
-                loob, "old-ref", "d-old", "10.9.0.1", oldCode, t0.minusSeconds(172800)));
+                loob, campA, "old-ref", "d-old", "10.9.0.1", oldCode, t0.minusSeconds(172800)));
         for (int i = 0; i < 10; i++) {
             store.recordRedemption(new RedemptionRecord(
                     loob, campA, oldCode, "old-" + i, "do-" + i,
                     "10.9." + (10 + i) + ".2", t0.minusSeconds(172800 - i)));
         }
-        store.registerReferrer(new ReferrerRegistration(loob, "recent-1", "d-r1", "10.10.0.1", recentR1, t0));
-        store.registerReferrer(new ReferrerRegistration(loob, "recent-2", "d-r2", "10.11.0.1", recentR2, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, campA, "recent-1", "d-r1", "10.10.0.1", recentR1, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, campA, "recent-2", "d-r2", "10.11.0.1", recentR2, t0));
         store.recordRedemption(new RedemptionRecord(loob, campA, recentR1, "new-a", "dna", "10.12.0.1", t0));
         store.recordRedemption(new RedemptionRecord(loob, campA, recentR1, "new-b", "dnb", "10.13.0.1", t0));
         store.recordRedemption(new RedemptionRecord(loob, campA, recentR2, "new-c", "dnc", "10.14.0.1", t0));
@@ -164,8 +165,8 @@ class Neo4jGraphStoreIT {
     @Test
     void perCampaignReferralActivityIsIsolatedForTheSameReferrer() {
         // One honest referrer active across two campaigns: fan-out must NOT blend.
-        store.registerReferrer(new ReferrerRegistration(loob, "R", "dev-R", "10.0.0.1", code, t0));
-        store.registerReferrer(new ReferrerRegistration(loob, "R", "dev-R", "10.0.0.1", ReferralCode.of("LOOB-R-B"), t0.plusSeconds(1)));
+        store.registerReferrer(new ReferrerRegistration(loob, campA, "R", "dev-R", "10.0.0.1", code, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, campB, "R", "dev-R", "10.0.0.1", ReferralCode.of("LOOB-R-B"), t0.plusSeconds(1)));
         // camp-A: R refers A, B (fan-out 2).
         store.recordRedemption(new RedemptionRecord(loob, campA, code, "A", "da", "10.0.0.2", t0.plusSeconds(60)));
         store.recordRedemption(new RedemptionRecord(loob, campA, code, "B", "db", "10.0.0.3", t0.plusSeconds(90)));
@@ -189,8 +190,8 @@ class Neo4jGraphStoreIT {
     void honestFanoutAcrossCampaignsDoesNotCombineIntoVelocityBurst() {
         ReferralCode codeA = ReferralCode.of("LOOB-HONEST-A");
         ReferralCode codeB = ReferralCode.of("LOOB-HONEST-B");
-        store.registerReferrer(new ReferrerRegistration(loob, "honest-r", "honest-device", "10.20.0.1", codeA, t0));
-        store.registerReferrer(new ReferrerRegistration(loob, "honest-r", "honest-device", "10.20.0.1", codeB, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, campA, "honest-r", "honest-device", "10.20.0.1", codeA, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, campB, "honest-r", "honest-device", "10.20.0.1", codeB, t0));
         for (int i = 0; i < 12; i++) {
             store.recordRedemption(new RedemptionRecord(
                     loob, campA, codeA, "a-" + i, "a-device-" + i,
@@ -221,8 +222,8 @@ class Neo4jGraphStoreIT {
     void deviceAndIpOverlapAcrossCampaignsReachTheScorer() {
         // Shared identity edges remain campaign-agnostic even though REFERRED
         // traversal and the velocity baseline stay campaign-scoped.
-        store.registerReferrer(new ReferrerRegistration(loob, "R", "dev-R", "10.1.0.1", code, t0));
-        store.registerReferrer(new ReferrerRegistration(loob, "R", "dev-R", "10.1.0.1", ReferralCode.of("LOOB-R-B"), t0.plusSeconds(1)));
+        store.registerReferrer(new ReferrerRegistration(loob, campA, "R", "dev-R", "10.1.0.1", code, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, campB, "R", "dev-R", "10.1.0.1", ReferralCode.of("LOOB-R-B"), t0.plusSeconds(1)));
         store.recordRedemption(new RedemptionRecord(loob, campA, code, "A", "shared-dev", "10.0.0.2", t0.plusSeconds(60)));
         store.recordRedemption(new RedemptionRecord(loob, campB, ReferralCode.of("LOOB-R-B"), "B", "shared-dev", "10.0.0.9", t0.plusSeconds(90)));
 
@@ -245,22 +246,109 @@ class Neo4jGraphStoreIT {
     @Test
     void scopesEverythingByTenant() {
         TenantId other = TenantId.of("other-bank");
-        store.registerReferrer(new ReferrerRegistration(loob, "R", "dev-R", "10.0.0.1", code, t0));
+        store.registerReferrer(new ReferrerRegistration(loob, campA, "R", "dev-R", "10.0.0.1", code, t0));
         // Same code string, different tenant, must not leak.
-        store.registerReferrer(new ReferrerRegistration(other, "X", "dev-X", "10.0.0.1", code, t0));
+        store.registerReferrer(new ReferrerRegistration(other, campA, "X", "dev-X", "10.0.0.1", code, t0));
         store.recordRedemption(new RedemptionRecord(other, campA, code, "Y", "dev-Y", "10.0.0.9", t0.plusSeconds(60)));
 
         ReferralNeighbourhood n = store.loadNeighbourhood(loob, code, campA);
 
         assertThat(n.referrerUserId()).isEqualTo("R");
         assertThat(n.referralEdges()).isEmpty();
-        assertThat(store.findReferrerUserId(loob, code)).contains("R");
-        assertThat(store.findReferrerUserId(other, code)).contains("X");
+        assertThat(store.findReferrerUserId(loob, campA, code)).contains("R");
+        assertThat(store.findReferrerUserId(other, campA, code)).contains("X");
+    }
+
+    @Test
+    void bindsAReferralCodeToItsIssuanceCampaign() {
+        store.registerReferrer(new ReferrerRegistration(
+                loob, campA, "R", "dev-R", "10.0.0.1", code, t0));
+
+        assertThat(store.referralCodeExists(loob, campA, code)).isTrue();
+        assertThat(store.referralCodeExists(loob, campB, code)).isFalse();
+
+        // The graph write also refuses a cross-campaign use even if a caller
+        // bypassed the service-layer guard.
+        store.recordRedemption(new RedemptionRecord(
+                loob, campB, code, "wrong-campaign-referee", "dev-X", "10.0.0.2", t0.plusSeconds(30)));
+        assertThat(store.referralExists(loob, campB, code, "wrong-campaign-referee")).isFalse();
+
+        store.recordRedemption(new RedemptionRecord(
+                loob, campA, code, "A", "dev-A", "10.0.0.3", t0.plusSeconds(60)));
+        assertThat(store.referralExists(loob, campA, code, "A")).isTrue();
+        assertThat(store.convertedReferralExists(loob, campA, code, "A")).isFalse();
+
+        store.recordConversion(new ConversionRecord(
+                loob, campA, code, "A", "DEPOSIT", t0.plusSeconds(120)));
+        assertThat(store.convertedReferralExists(loob, campA, code, "A")).isTrue();
+        assertThat(store.convertedReferralExists(loob, campA, code, "someone-else")).isFalse();
+        assertThat(store.convertedReferralExists(loob, campB, code, "A")).isFalse();
     }
 
     @Test
     void returnsEmptyNeighbourhoodForUnknownCode() {
         ReferralNeighbourhood n = store.loadNeighbourhood(loob, ReferralCode.of("NOPE"), campA);
+
+        assertThat(n.referrerUserId()).isNull();
+        assertThat(n.referralEdges()).isEmpty();
+        assertThat(n.sharedEdges()).isEmpty();
+    }
+
+    // --- Case-detail visualization: bounded, reason-code-driven edge selection ---
+
+    /** A ring where A and B share BOTH a device and an IP subnet, so the graph
+     *  holds SHARES_DEVICE and SHARES_IP_SUBNET edges between them. */
+    private void seedDeviceAndSubnetRing() {
+        store.registerReferrer(new ReferrerRegistration(loob, campA, "R", "dev-R", "10.0.0.1", code, t0));
+        store.recordRedemption(new RedemptionRecord(loob, campA, code, "A", "dev-shared", "10.0.0.2", t0.plusSeconds(60)));
+        store.recordRedemption(new RedemptionRecord(loob, campA, code, "B", "dev-shared", "10.0.0.3", t0.plusSeconds(120)));
+    }
+
+    @Test
+    void visualizationFetchesOnlyDeviceEdgesForADeviceCollisionCase() {
+        seedDeviceAndSubnetRing();
+
+        ReferralNeighbourhood n = store.loadCaseVisualization(
+                loob, code, campA, Set.of(SharedAttributeType.DEVICE));
+
+        assertThat(n.referrerUserId()).isEqualTo("R");
+        assertThat(n.fanoutOfReferrer()).extracting(ReferralEdge::refereeUserId)
+                .containsExactlyInAnyOrder("A", "B");
+        assertThat(n.sharedEdges()).extracting(SharedAttributeEdge::type)
+                .containsOnly(SharedAttributeType.DEVICE);
+        assertThat(n.sharedEdges()).doesNotContain(
+                new SharedAttributeEdge("A", "B", SharedAttributeType.IP_SUBNET));
+    }
+
+    @Test
+    void visualizationFetchesOnlySubnetEdgesForAnIpCollisionCase() {
+        seedDeviceAndSubnetRing();
+
+        ReferralNeighbourhood n = store.loadCaseVisualization(
+                loob, code, campA, Set.of(SharedAttributeType.IP_SUBNET));
+
+        assertThat(n.sharedEdges()).extracting(SharedAttributeEdge::type)
+                .containsOnly(SharedAttributeType.IP_SUBNET);
+        assertThat(n.sharedEdges()).doesNotContain(
+                new SharedAttributeEdge("A", "B", SharedAttributeType.DEVICE));
+    }
+
+    @Test
+    void visualizationDrawsNoOverlapEdgesForAVelocityOrCycleOnlyCase() {
+        seedDeviceAndSubnetRing();
+
+        // A velocity/cycle/datacenter-only case selects no overlap edge types.
+        ReferralNeighbourhood n = store.loadCaseVisualization(loob, code, campA, Set.of());
+
+        assertThat(n.referrerUserId()).isEqualTo("R");
+        assertThat(n.fanoutOfReferrer()).hasSize(2);          // referral cluster still shown
+        assertThat(n.sharedEdges()).isEmpty();                // but no device/IP edges pulled
+    }
+
+    @Test
+    void visualizationReturnsEmptyForUnknownCode() {
+        ReferralNeighbourhood n = store.loadCaseVisualization(
+                loob, ReferralCode.of("NOPE"), campA, Set.of(SharedAttributeType.DEVICE));
 
         assertThat(n.referrerUserId()).isNull();
         assertThat(n.referralEdges()).isEmpty();

@@ -1,9 +1,20 @@
 import { Panel } from '../../components/Panel'
+import { Button } from '../../components/Button'
 import { relativeTime } from '../../lib/format'
 import type { AuditEntry } from '../../types/api'
 
 /** Who decided what, when — newest first. */
-export function AuditTrail({ entries }: { entries: AuditEntry[] }) {
+export function AuditTrail({
+  entries,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
+}: {
+  entries: AuditEntry[]
+  hasMore?: boolean
+  loadingMore?: boolean
+  onLoadMore?: () => void
+}) {
   if (entries.length === 0) return null
   const ordered = [...entries].reverse()
   return (
@@ -23,6 +34,13 @@ export function AuditTrail({ entries }: { entries: AuditEntry[] }) {
           </li>
         ))}
       </ol>
+      {hasMore && onLoadMore && (
+        <div className="mt-4 flex justify-center border-t border-border pt-3">
+          <Button size="sm" onClick={onLoadMore} disabled={loadingMore}>
+            {loadingMore ? 'Loading history…' : 'Load more history'}
+          </Button>
+        </div>
+      )}
     </Panel>
   )
 }

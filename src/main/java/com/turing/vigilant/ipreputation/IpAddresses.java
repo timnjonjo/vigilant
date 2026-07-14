@@ -9,7 +9,7 @@ import java.net.UnknownHostException;
  * A non-literal or malformed input raises {@link IllegalArgumentException} rather
  * than being handed to a resolver that might attempt a name lookup.
  */
-final class IpAddresses {
+public final class IpAddresses {
 
     private IpAddresses() {
     }
@@ -27,6 +27,22 @@ final class IpAddresses {
             return InetAddress.getByName(value);
         } catch (UnknownHostException e) {
             throw new IllegalArgumentException("Not a valid IP literal: " + ipAddress, e);
+        }
+    }
+
+    /**
+     * Returns a canonical IPv4/IPv6 literal, or {@code null} for absent or
+     * malformed input. Event ingestion stays non-blocking while invalid text is
+     * prevented from becoming a graph property or a synthetic subnet key.
+     */
+    public static String normalizeLiteralOrNull(String ipAddress) {
+        if (ipAddress == null || ipAddress.isBlank()) {
+            return null;
+        }
+        try {
+            return parseLiteral(ipAddress).getHostAddress();
+        } catch (IllegalArgumentException e) {
+            return null;
         }
     }
 

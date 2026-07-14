@@ -18,6 +18,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -90,5 +92,18 @@ class CodeGenerationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(BODY))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void rejectsBlankRequiredFieldsBeforeIssuance() throws Exception {
+        mockMvc.perform(post("/v1/codes/generate")
+                        .with(host("loob-bank"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"tenantId":"loob-bank","campaignId":"camp-1","userId":" "}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verify(issuanceService, never()).issue(any(), any(), any(), any(), any());
     }
 }

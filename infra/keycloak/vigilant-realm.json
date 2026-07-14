@@ -24,12 +24,12 @@
       "enabled": true,
       "publicClient": true,
       "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": true,
-      "redirectUris": ["http://localhost:5173/*"],
-      "webOrigins": ["http://localhost:5173", "+"],
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:5173/"],
+      "webOrigins": ["http://localhost:5173"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:5173/*"
+        "post.logout.redirect.uris": "http://localhost:5173/"
       },
       "fullScopeAllowed": true,
       "protocolMappers": [
@@ -86,7 +86,7 @@
       "description": "Confidential service-account client for server-to-server host integration (codes/events/decisions). Client-credentials grant only.",
       "enabled": true,
       "publicClient": false,
-      "secret": "loob-host-dev-secret",
+      "secret": "${LOOB_HOST_CLIENT_SECRET}",
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
@@ -118,7 +118,7 @@
       "firstName": "Amina",
       "lastName": "Kamau",
       "attributes": { "tenant_id": ["loob-bank"] },
-      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "credentials": [{ "type": "password", "value": "${VIGILANT_SEED_USER_PASSWORD}", "temporary": false }],
       "realmRoles": ["fraud_analyst"],
       "groups": ["/loob-bank"]
     },
@@ -130,7 +130,7 @@
       "firstName": "Otieno",
       "lastName": "Were",
       "attributes": { "tenant_id": ["loob-bank"] },
-      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "credentials": [{ "type": "password", "value": "${VIGILANT_SEED_USER_PASSWORD}", "temporary": false }],
       "realmRoles": ["ops_viewer"],
       "groups": ["/loob-bank"]
     },
@@ -142,7 +142,7 @@
       "firstName": "Njeri",
       "lastName": "Mwangi",
       "attributes": { "tenant_id": ["loob-bank"] },
-      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "credentials": [{ "type": "password", "value": "${VIGILANT_SEED_USER_PASSWORD}", "temporary": false }],
       "realmRoles": ["tenant_admin"],
       "groups": ["/loob-bank"]
     },
@@ -154,7 +154,7 @@
       "firstName": "Brian",
       "lastName": "Odhiambo",
       "attributes": { "tenant_id": ["acme-sacco"] },
-      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "credentials": [{ "type": "password", "value": "${VIGILANT_SEED_USER_PASSWORD}", "temporary": false }],
       "realmRoles": ["fraud_analyst"],
       "groups": ["/acme-sacco"]
     },

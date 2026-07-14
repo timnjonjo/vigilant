@@ -1,5 +1,5 @@
 import type { VigilantApi } from '../contract'
-import type { AuditEntry, Campaign, CaseAction, CaseView } from '../../types/api'
+import type { AuditEntry, Campaign, CaseAction, CaseView, CursorPage } from '../../types/api'
 import {
   TENANTS,
   seedCases,
@@ -25,6 +25,13 @@ function locate(tenantId: string, id: number): CaseView {
   return found
 }
 
+function pageOf<T>(items: T[], cursor?: string, limit = 25): CursorPage<T> {
+  const start = cursor ? Number(cursor.replace('mock-', '')) : 0
+  const page = items.slice(start, start + limit)
+  const next = start + page.length
+  return { items: page, nextCursor: next < items.length ? `mock-${next}` : null }
+}
+
 const NOTE: Record<CaseAction, string> = {
   APPROVE: 'Approved payout — cleared as genuine.',
   REJECT: 'Rejected payout — confirmed fraudulent.',
@@ -40,19 +47,27 @@ export const mockApi: VigilantApi = {
     if (query.status) rows = rows.filter((c) => c.status === query.status)
     if (query.reasonCode) rows = rows.filter((c) => c.reasonCodes.includes(query.reasonCode!))
     if (query.campaignId) rows = rows.filter((c) => c.campaignId === query.campaignId)
+    if (query.search) {
+      const term = query.search.toLowerCase()
+      rows = rows.filter(
+        (c) =>
+          c.referralCode.toLowerCase().includes(term) ||
+          c.refereeUserId.toLowerCase().includes(term),
+      )
+    }
     rows = [...rows].sort((a, b) =>
       query.sortBy === 'age'
         ? new Date(a.openedAt).getTime() - new Date(b.openedAt).getTime()
         : b.score - a.score,
     )
-    return delay(rows)
+    return delay(pageOf(rows, query.cursor, query.limit))
   },
 
   getCase: (tenantId, id) => delay(locate(tenantId, id)),
 
   getCaseGraph: (_tenantId, id) => delay(CASE_GRAPHS[id] ?? { nodes: [], edges: [] }),
 
-  getCaseAudit: (_tenantId, id) => delay(audit[id] ?? []),
+  getCaseAudit: (_tenantId, id, cursor, limit) => delay(pageOf(audit[id] ?? [], cursor, limit)),
 
   actOnCase: (tenantId, id, action, actor, note) => {
     const target = locate(tenantId, id)
@@ -76,7 +91,8 @@ export const mockApi: VigilantApi = {
 
   getMonitoring: (tenantId) => delay(buildMonitoring(tenantId)),
 
-  listCampaigns: (tenantId) => delay(campaigns.filter((c) => c.tenantId === tenantId)),
+  listCampaigns: (tenantId, cursor, limit) =>
+    delay(pageOf(campaigns.filter((c) => c.tenantId === tenantId), cursor, limit)),
 
   createCampaign: (tenantId, input) => {
     const now = new Date().toISOString()

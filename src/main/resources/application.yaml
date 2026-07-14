@@ -1,6 +1,8 @@
 spring:
   application:
     name: Vigilant
+  config:
+    import: optional:file:.env[.properties]
 
   # Running the app (spring-boot:run or the IDE run config) brings up the
   # docker-compose backends and waits for them to be healthy. start-only leaves
@@ -25,13 +27,13 @@ spring:
     uri: ${SPRING_NEO4J_URI:bolt://localhost:7687}
     authentication:
       username: ${SPRING_NEO4J_AUTHENTICATION_USERNAME:neo4j}
-      password: ${SPRING_NEO4J_AUTHENTICATION_PASSWORD:vigilant-dev}
+      password: ${VIGILANT_NEO4J_PASSWORD}
 
   # Case queue / audit trail (separate from the graph store)
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/vigilant}
     username: ${SPRING_DATASOURCE_USERNAME:vigilant}
-    password: ${SPRING_DATASOURCE_PASSWORD:vigilant-dev}
+    password: ${VIGILANT_POSTGRES_PASSWORD}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -92,3 +94,13 @@ springdoc:
       use-pkce-with-authorization-code-grant: true
       use-basic-authentication-with-access-code-header: false
       scopes: openid
+
+# Logging. Every request carries an X-Request-Id correlation id (see
+# RequestCorrelationFilter) surfaced as %X{requestId}; business events are logged
+# as SLF4J key/value pairs (see DomainEvent), rendered inline here via %kvp so the
+# dev console stays readable. Under the `prod` profile the console switches to
+# structured ECS JSON (application-prod.yaml), where requestId and every event
+# field become discrete, queryable JSON fields.
+logging:
+  pattern:
+    console: "%clr(%d{HH:mm:ss.SSS}){faint} %clr(%-5p){highlight} %clr([%X{requestId:-no-request}]){magenta} %clr(%-38.38logger{37}){cyan} %clr(:){faint} %m %clr(%kvp){yellow}%n%wEx"

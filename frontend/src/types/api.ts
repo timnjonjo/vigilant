@@ -98,6 +98,11 @@ export interface AuditEntry {
   note: string
 }
 
+export interface CursorPage<T> {
+  items: T[]
+  nextCursor: string | null
+}
+
 // Ops / monitoring aggregates.
 export interface FraudRatePoint {
   date: string
@@ -141,7 +146,11 @@ export interface CaseQuery {
   status?: CaseStatus
   reasonCode?: ReasonCode
   campaignId?: string
+  /** Free-text: matches a referral code or referee user id (case-insensitive). */
+  search?: string
   sortBy?: 'score' | 'age'
+  cursor?: string
+  limit?: number
 }
 
 export interface Tenant {

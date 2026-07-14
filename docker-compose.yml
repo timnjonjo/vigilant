@@ -6,15 +6,15 @@ services:
     image: neo4j:5.26
     container_name: vigilant-neo4j
     ports:
-      - "7474:7474"   # HTTP browser
-      - "7687:7687"   # Bolt
+      - "127.0.0.1:7474:7474"   # HTTP browser (local host only)
+      - "127.0.0.1:7687:7687"   # Bolt (local host only)
     environment:
-      NEO4J_AUTH: neo4j/vigilant-dev
+      NEO4J_AUTH: neo4j/${VIGILANT_NEO4J_PASSWORD:?copy .env.example to .env}
       NEO4J_server_memory_pagecache_size: 512M
     volumes:
       - neo4j-data:/data
     healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "vigilant-dev", "RETURN 1"]
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "${VIGILANT_NEO4J_PASSWORD:?copy .env.example to .env}", "RETURN 1"]
       interval: 10s
       timeout: 10s
       retries: 10
@@ -23,11 +23,11 @@ services:
     image: postgres:16
     container_name: vigilant-postgres
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: vigilant
       POSTGRES_USER: vigilant
-      POSTGRES_PASSWORD: vigilant-dev
+      POSTGRES_PASSWORD: ${VIGILANT_POSTGRES_PASSWORD:?copy .env.example to .env}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       # Creates the separate `keycloak` database on first init (empty volume only).
@@ -91,7 +91,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      PGPASSWORD: vigilant-dev
+      PGPASSWORD: ${VIGILANT_POSTGRES_PASSWORD:?copy .env.example to .env}
     entrypoint: ["sh", "-c"]
     command:
       - |
@@ -108,7 +108,7 @@ services:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: vigilant
-      KC_DB_PASSWORD: vigilant-dev
+      KC_DB_PASSWORD: ${VIGILANT_POSTGRES_PASSWORD:?copy .env.example to .env}
       # Single-node dev: skip Infinispan/JGroups clustering (the JDBC_PING2 cluster
       # discovery that runs *through* Postgres). Removes startup overhead and the
       # fragility where a Postgres restart wedges Keycloak's DB-backed membership
@@ -119,10 +119,12 @@ services:
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:?copy .env.example to .env}
+      VIGILANT_SEED_USER_PASSWORD: ${VIGILANT_SEED_USER_PASSWORD:?copy .env.example to .env}
+      LOOB_HOST_CLIENT_SECRET: ${LOOB_HOST_CLIENT_SECRET:?copy .env.example to .env}
     ports:
-      - "8081:8080"   # OIDC endpoints (issuer http://localhost:8081/realms/vigilant)
-      - "9000:9000"   # management / health
+      - "127.0.0.1:8081:8080"   # OIDC endpoints (local host only)
+      - "127.0.0.1:9000:9000"   # management / health (local host only)
     depends_on:
       postgres:
         condition: service_healthy
@@ -143,7 +145,7 @@ services:
     build: .
     container_name: vigilant-service
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       neo4j:
         condition: service_healthy
@@ -154,10 +156,10 @@ services:
     environment:
       SPRING_NEO4J_URI: bolt://neo4j:7687
       SPRING_NEO4J_AUTHENTICATION_USERNAME: neo4j
-      SPRING_NEO4J_AUTHENTICATION_PASSWORD: vigilant-dev
+      VIGILANT_NEO4J_PASSWORD: ${VIGILANT_NEO4J_PASSWORD:?copy .env.example to .env}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/vigilant
       SPRING_DATASOURCE_USERNAME: vigilant
-      SPRING_DATASOURCE_PASSWORD: vigilant-dev
+      VIGILANT_POSTGRES_PASSWORD: ${VIGILANT_POSTGRES_PASSWORD:?copy .env.example to .env}
       VIGILANT_ASN_DB: /data/geoip/dbip-asn-lite.mmdb
       # No docker socket/compose file inside the container; keep the module off.
       SPRING_DOCKER_COMPOSE_ENABLED: "false"

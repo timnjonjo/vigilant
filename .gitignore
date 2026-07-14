@@ -35,3 +35,4 @@ build/
 
 ### Vigilant local dev artifacts (downloaded ASN database, etc.) ###
 .local/
+.env

@@ -9,3 +9,13 @@ springdoc:
     enabled: false
   swagger-ui:
     enabled: false
+
+# Structured logging: emit the console as Elastic Common Schema JSON, one object
+# per line, for ingestion by a log pipeline. requestId (MDC) and every DomainEvent
+# key/value pair become top-level JSON fields, so the approved payout_decision
+# shape — {event, requestId, tenantId, campaignId, referralCode, action, score,
+# reasonCodes, caseId} — is queryable without parsing a message string.
+logging:
+  structured:
+    format:
+      console: ecs

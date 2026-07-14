@@ -1,6 +1,7 @@
 import { ArrowLeft } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../../api'
+import { collectCursorPages } from '../../api/pagination'
 import { ErrorNote } from '../../components/ErrorNote'
 import { LoadingRows } from '../../components/LoadingState'
 import { Panel } from '../../components/Panel'
@@ -8,6 +9,7 @@ import { ScoreReadout } from '../../components/ScoreReadout'
 import { EDGE_LABELS } from '../../lib/labels'
 import { useSession } from '../../auth/session'
 import { useAsync } from '../../lib/useAsync'
+import { useCursorPagination } from '../../lib/useCursorPagination'
 import type { EdgeType } from '../../types/api'
 import { AuditTrail } from './AuditTrail'
 import { CaseActions } from './CaseActions'
@@ -20,10 +22,12 @@ const LEGEND: { type: EdgeType; color: string; dashed?: boolean }[] = [
   { type: 'SHARES_IP_SUBNET', color: 'var(--color-edge-subnet)', dashed: true },
 ]
 
-function GraphLegend() {
+function GraphLegend({ present }: { present: ReadonlySet<EdgeType> }) {
+  const shown = LEGEND.filter(({ type }) => present.has(type))
+  if (shown.length === 0) return null
   return (
     <div className="flex flex-wrap items-center gap-3">
-      {LEGEND.map(({ type, color }) => (
+      {shown.map(({ type, color }) => (
         <span key={type} className="inline-flex items-center gap-1.5 text-xs text-muted">
           <span className="h-0.5 w-4" style={{ background: color }} />
           {EDGE_LABELS[type]}
@@ -40,13 +44,20 @@ export function CaseDetailPage() {
 
   const caseQ = useAsync(() => api.getCase(tenantId, caseId), [tenantId, caseId])
   const graphQ = useAsync(() => api.getCaseGraph(tenantId, caseId), [tenantId, caseId])
-  const auditQ = useAsync(() => api.getCaseAudit(tenantId, caseId), [tenantId, caseId])
-  const campaignsQ = useAsync(() => api.listCampaigns(tenantId), [tenantId])
+  const auditQ = useCursorPagination(
+    (cursor) => api.getCaseAudit(tenantId, caseId, cursor, 25),
+    [tenantId, caseId],
+  )
+  const campaignsQ = useAsync(
+    () => collectCursorPages((cursor) => api.listCampaigns(tenantId, cursor, 100)),
+    [tenantId],
+  )
 
   const c = caseQ.data
   const campaignName = c
     ? campaignsQ.data?.find((cp) => cp.campaignId === c.campaignId)?.name
     : undefined
+  const presentEdgeTypes = new Set<EdgeType>(graphQ.data?.edges.map((e) => e.type))
 
   return (
     <div className="space-y-4">
@@ -85,10 +96,21 @@ export function CaseDetailPage() {
                   auditQ.reload()
                 }}
               />
-              {auditQ.data && <AuditTrail entries={auditQ.data} />}
+              {!auditQ.loading && (
+                <AuditTrail
+                  entries={auditQ.items}
+                  hasMore={Boolean(auditQ.nextCursor)}
+                  loadingMore={auditQ.loadingMore}
+                  onLoadMore={auditQ.loadMore}
+                />
+              )}
             </div>
 
-            <Panel title="Referral cluster" actions={<GraphLegend />} bodyClassName="p-3">
+            <Panel
+              title="Referral cluster"
+              actions={<GraphLegend present={presentEdgeTypes} />}
+              bodyClassName="p-3"
+            >
               {graphQ.loading ? (
                 <LoadingRows rows={4} />
               ) : graphQ.error ? (

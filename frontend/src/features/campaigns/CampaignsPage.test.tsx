@@ -5,10 +5,10 @@ import { SessionProvider, makeSession } from '../../auth/session'
 import { api } from '../../api'
 import { CampaignsPage } from './CampaignsPage'
 
-// The page reads campaigns through the api swap point; stub it to an empty list
+// The page reads campaigns through the api swap point; stub it to an empty page
 // so the role-gated controls (not the data) are what we assert on.
 vi.mock('../../api', () => ({
-  api: { listCampaigns: vi.fn().mockResolvedValue([]) },
+  api: { listCampaigns: vi.fn().mockResolvedValue({ items: [], nextCursor: null }) },
 }))
 
 // The tenant comes from the session (the token's tenant_id claim) — there is no
@@ -50,6 +50,6 @@ describe('CampaignsPage role gating', () => {
     await screen.findByRole('heading', { name: 'Campaigns' })
     // The tenant argument is the session's tenant_id, taken straight from the
     // token — never a value the user picked from a switcher.
-    expect(api.listCampaigns).toHaveBeenCalledWith('acme-sacco')
+    expect(api.listCampaigns).toHaveBeenCalledWith('acme-sacco', undefined, 25)
   })
 })

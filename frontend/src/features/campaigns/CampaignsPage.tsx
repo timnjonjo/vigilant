@@ -8,7 +8,7 @@ import { ErrorNote } from '../../components/ErrorNote'
 import { LoadingRows } from '../../components/LoadingState'
 import { Panel } from '../../components/Panel'
 import { formatKes } from '../../lib/format'
-import { useAsync } from '../../lib/useAsync'
+import { useCursorPagination } from '../../lib/useCursorPagination'
 import type { Campaign, CampaignInput, CampaignStatus } from '../../types/api'
 import { CampaignForm } from './CampaignForm'
 
@@ -37,7 +37,18 @@ export function CampaignsPage() {
   const { tenantId } = session
   const canManage = session.hasRole('tenant_admin')
 
-  const { data, loading, error, reload } = useAsync(() => api.listCampaigns(tenantId), [tenantId])
+  const {
+    items: data,
+    loading,
+    loadingMore,
+    error,
+    nextCursor,
+    loadMore,
+    reload,
+  } = useCursorPagination(
+    (cursor) => api.listCampaigns(tenantId, cursor, 25),
+    [tenantId],
+  )
   const [editing, setEditing] = useState<Campaign | 'new' | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -93,9 +104,9 @@ export function CampaignsPage() {
       <Panel bodyClassName="p-0">
         {loading ? (
           <LoadingRows />
-        ) : error ? (
+        ) : error && data.length === 0 ? (
           <ErrorNote message={error} />
-        ) : !data || data.length === 0 ? (
+        ) : data.length === 0 ? (
           <EmptyState
             icon={Megaphone}
             title="No campaigns yet"
@@ -106,6 +117,7 @@ export function CampaignsPage() {
             }
           />
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-faint">
@@ -156,6 +168,15 @@ export function CampaignsPage() {
               ))}
             </tbody>
           </table>
+          {error && <ErrorNote message={error} />}
+          {nextCursor && (
+            <div className="flex justify-center border-t border-border p-3">
+              <Button onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? 'Loading more…' : 'Load more'}
+              </Button>
+            </div>
+          )}
+          </div>
         )}
       </Panel>
     </div>

@@ -1,5 +1,5 @@
 import type { VigilantApi } from '../contract'
-import type { Campaign, CaseView } from '../../types/api'
+import type { AuditEntry, Campaign, CaseView, CursorPage } from '../../types/api'
 import { http } from '../http'
 
 /**
@@ -11,17 +11,16 @@ import { http } from '../http'
 export const httpApi: VigilantApi = {
   listTenants: () => http('/v1/tenants'),
 
-  listCases: async ({ tenantId, status, reasonCode, campaignId, sortBy }) => {
+  listCases: ({ tenantId, status, reasonCode, campaignId, search, sortBy, cursor, limit }) => {
     const params = new URLSearchParams({ tenantId })
     if (status) params.set('status', status)
     if (campaignId) params.set('campaignId', campaignId)
-    let rows = await http<CaseView[]>(`/v1/cases?${params.toString()}`)
-    if (reasonCode) rows = rows.filter((c) => c.reasonCodes.includes(reasonCode))
-    return [...rows].sort((a, b) =>
-      sortBy === 'age'
-        ? new Date(a.openedAt).getTime() - new Date(b.openedAt).getTime()
-        : b.score - a.score,
-    )
+    if (reasonCode) params.set('reasonCode', reasonCode)
+    if (search) params.set('search', search)
+    if (sortBy) params.set('sortBy', sortBy)
+    if (cursor) params.set('cursor', cursor)
+    if (limit) params.set('limit', String(limit))
+    return http<CursorPage<CaseView>>(`/v1/cases?${params.toString()}`)
   },
 
   getCase: (tenantId, id) =>
@@ -30,10 +29,14 @@ export const httpApi: VigilantApi = {
   getCaseGraph: (tenantId, id) =>
     http(`/v1/cases/${id}/graph?tenantId=${encodeURIComponent(tenantId)}`),
 
-  getCaseAudit: (tenantId, id) =>
-    http(`/v1/cases/${id}/audit?tenantId=${encodeURIComponent(tenantId)}`),
+  getCaseAudit: (tenantId, id, cursor, limit) => {
+    const params = new URLSearchParams({ tenantId })
+    if (cursor) params.set('cursor', cursor)
+    if (limit) params.set('limit', String(limit))
+    return http<CursorPage<AuditEntry>>(`/v1/cases/${id}/audit?${params.toString()}`)
+  },
 
-  actOnCase: (tenantId, id, action, actor) => {
+  actOnCase: (tenantId, id, action, _actor) => {
     // The backend's decision endpoint is final-only (APPROVE/REJECT). Hold and
     // Escalate are non-final dashboard actions with no backend path yet.
     if (action === 'HOLD' || action === 'ESCALATE') {
@@ -41,7 +44,7 @@ export const httpApi: VigilantApi = {
     }
     return http(`/v1/cases/${id}/resolve`, {
       method: 'POST',
-      body: JSON.stringify({ tenantId, resolution: action, resolvedBy: actor }),
+      body: JSON.stringify({ tenantId, resolution: action }),
     })
   },
 
@@ -51,8 +54,12 @@ export const httpApi: VigilantApi = {
     return http(`/v1/monitoring?${params.toString()}`)
   },
 
-  listCampaigns: (tenantId) =>
-    http(`/v1/campaigns?tenantId=${encodeURIComponent(tenantId)}`),
+  listCampaigns: (tenantId, cursor, limit) => {
+    const params = new URLSearchParams({ tenantId })
+    if (cursor) params.set('cursor', cursor)
+    if (limit) params.set('limit', String(limit))
+    return http<CursorPage<Campaign>>(`/v1/campaigns?${params.toString()}`)
+  },
 
   createCampaign: (tenantId, input) =>
     http<Campaign>('/v1/campaigns', {

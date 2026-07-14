@@ -5,6 +5,7 @@ import com.turing.vigilant.graph.GraphCommands.ConversionRecord;
 import com.turing.vigilant.graph.GraphCommands.RedemptionRecord;
 import com.turing.vigilant.graph.GraphStore;
 import com.turing.vigilant.ipreputation.IpReputationChecker;
+import com.turing.vigilant.ipreputation.IpAddresses;
 import com.turing.vigilant.shared.CampaignId;
 import com.turing.vigilant.shared.IpType;
 import com.turing.vigilant.shared.ReferralCode;
@@ -40,14 +41,18 @@ public class EventIngestionService {
     public void recordRedemption(TenantId tenantId, CampaignId campaignId, ReferralCode referralCode,
                                  String newUserId, String deviceId, String ipAddress, Instant timestamp) {
         campaignService.requireCampaign(tenantId, campaignId);
+        if (!graphStore.referralCodeExists(tenantId, campaignId, referralCode)) {
+            throw new ReferralEventNotFoundException();
+        }
+        String normalizedIpAddress = IpAddresses.normalizeLiteralOrNull(ipAddress);
         graphStore.recordRedemption(new RedemptionRecord(
-                tenantId, campaignId, referralCode, newUserId, deviceId, ipAddress,
-                orNow(timestamp), reputationTypeOf(ipAddress)));
+                tenantId, campaignId, referralCode, newUserId, deviceId, normalizedIpAddress,
+                orNow(timestamp), reputationTypeOf(normalizedIpAddress)));
     }
 
     /**
-     * Classifies the IP, tolerating null/malformed input — ingestion must never
-     * fail on a bad address, so anything unclassifiable is stored as UNKNOWN.
+     * Classifies a normalized IP. Malformed source input is discarded rather
+     * than stored as an address/subnet, while ingestion remains non-blocking.
      */
     private IpType reputationTypeOf(String ipAddress) {
         if (ipAddress == null || ipAddress.isBlank()) {
@@ -63,6 +68,9 @@ public class EventIngestionService {
     public void recordConversion(TenantId tenantId, CampaignId campaignId, ReferralCode referralCode,
                                  String refereeUserId, String conversionType, Instant timestamp) {
         campaignService.requireCampaign(tenantId, campaignId);
+        if (!graphStore.referralExists(tenantId, campaignId, referralCode, refereeUserId)) {
+            throw new ReferralEventNotFoundException();
+        }
         graphStore.recordConversion(new ConversionRecord(
                 tenantId, campaignId, referralCode, refereeUserId, conversionType, orNow(timestamp)));
     }
