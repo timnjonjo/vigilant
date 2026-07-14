@@ -9,7 +9,6 @@ import { LoadingRows } from '../../components/LoadingState'
 import { Panel } from '../../components/Panel'
 import { formatKes } from '../../lib/format'
 import { useAsync } from '../../lib/useAsync'
-import { useTenant } from '../../state/tenant'
 import type { Campaign, CampaignInput, CampaignStatus } from '../../types/api'
 import { CampaignForm } from './CampaignForm'
 
@@ -34,8 +33,8 @@ const CRITERIA_LABEL: Record<Campaign['conversionCriteria'], string> = {
 }
 
 export function CampaignsPage() {
-  const { tenantId } = useTenant()
   const session = useSession()
+  const { tenantId } = session
   const canManage = session.hasRole('tenant_admin')
 
   const { data, loading, error, reload } = useAsync(() => api.listCampaigns(tenantId), [tenantId])

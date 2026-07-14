@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from '../../api'
+import { useSession } from '../../auth/session'
 import { ErrorNote } from '../../components/ErrorNote'
 import { LoadingRows } from '../../components/LoadingState'
 import { Panel } from '../../components/Panel'
@@ -7,13 +8,12 @@ import { Select } from '../../components/Select'
 import { StatCard } from '../../components/StatCard'
 import { formatKes, formatPct } from '../../lib/format'
 import { useAsync } from '../../lib/useAsync'
-import { useTenant } from '../../state/tenant'
 import { AlertPanel } from './AlertPanel'
 import { FraudRateChart } from './FraudRateChart'
 import { TopCodesTable } from './TopCodesTable'
 
 export function MonitoringPage() {
-  const { tenantId } = useTenant()
+  const { tenantId } = useSession()
   const [campaignId, setCampaignId] = useState('')
   const { data: campaigns } = useAsync(() => api.listCampaigns(tenantId), [tenantId])
   const { data, loading, error } = useAsync(

@@ -6,8 +6,8 @@ import { LoadingRows } from '../../components/LoadingState'
 import { Panel } from '../../components/Panel'
 import { ScoreReadout } from '../../components/ScoreReadout'
 import { EDGE_LABELS } from '../../lib/labels'
+import { useSession } from '../../auth/session'
 import { useAsync } from '../../lib/useAsync'
-import { useTenant } from '../../state/tenant'
 import type { EdgeType } from '../../types/api'
 import { AuditTrail } from './AuditTrail'
 import { CaseActions } from './CaseActions'
@@ -34,7 +34,7 @@ function GraphLegend() {
 }
 
 export function CaseDetailPage() {
-  const { tenantId } = useTenant()
+  const { tenantId } = useSession()
   const { id } = useParams()
   const caseId = Number(id)
 

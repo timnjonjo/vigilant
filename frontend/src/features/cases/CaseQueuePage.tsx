@@ -5,13 +5,13 @@ import { ErrorNote } from '../../components/ErrorNote'
 import { LoadingRows } from '../../components/LoadingState'
 import { Panel } from '../../components/Panel'
 import { api } from '../../api'
+import { useSession } from '../../auth/session'
 import { useAsync } from '../../lib/useAsync'
-import { useTenant } from '../../state/tenant'
 import { CaseQueueTable } from './CaseQueueTable'
 import { QueueFilters, type QueueFilterState } from './QueueFilters'
 
 export function CaseQueuePage() {
-  const { tenantId } = useTenant()
+  const { tenantId } = useSession()
   const [filters, setFilters] = useState<QueueFilterState>({
     status: 'OPEN',
     reasonCode: '',
